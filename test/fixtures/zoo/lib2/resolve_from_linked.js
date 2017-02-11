@@ -1,0 +1,1 @@
+module.exports = require("../x2/linked_2");

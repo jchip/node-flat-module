@@ -1,0 +1,8 @@
+{
+  "name": "app",
+  "dependencies": {
+    "missing-pkg": "1.0.0",
+    "foo": "^1.1.0",
+    "zoo": "symlink://../zoo"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "zoo",
+  "version": "0.1.0",
+  "dependencies": {
+    "foo": "^2.0.0"
+  }
+}

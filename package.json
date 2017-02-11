@@ -1,0 +1,29 @@
+{
+  "name": "flat-module",
+  "version": "0.1.0",
+  "description": "Flat module dependencies system for NodeJS",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha test/spec",
+    "coverage": "istanbul cover _mocha -- test/spec/*.js && istanbul check-coverage"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jchip/node-flat-module.git"
+  },
+  "keywords": [],
+  "author": "Joel Chen",
+  "license": "Apache-2.0",
+  "dependencies": {},
+  "devDependencies": {
+    "chai": "^3.5.0",
+    "istanbul": "^0.4.5",
+    "mkdirp": "^0.5.1",
+    "mocha": "^3.2.0",
+    "rimraf": "^2.5.4",
+    "optional-require": "^1.0.0"
+  },
+  "engines": {
+    "node": ">= 4"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "another-app",
+  "version": "0.0.1",
+  "fox": "symlink://../fox"
+}
