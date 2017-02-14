@@ -8,10 +8,12 @@ const path = require("path");
 assert(!Module._flat_orig_resolveLookupPaths, "Flat Module system already installed");
 
 Module._flat_orig_resolveLookupPaths = Module._resolveLookupPaths;
+Module._flat_orig_findPath = Module._findPath;
 
 const linkedMap = new Map();
 const topDirMap = new Map();
 const flatFlagMap = new Map();
+const versionsMap = new Map();
 
 const debug = Module._debug;
 const nodeModules = "node_modules";
@@ -197,10 +199,99 @@ internals.isRelativePathRequest = (request) => {
   return false;
 };
 
+internals.useOriginalLookup = (request) => {
+  return path.isAbsolute(request) || internals.isRelativePathRequest(request);
+};
+
+internals.parseRequest = (request) => {
+  let semVer = "";
+  const xAt = request.indexOf("@");
+  if (xAt > 0) {
+    const tmp = request.substr(0, xAt);
+    const xSep = request.indexOf("/", xAt);
+    let tail = "";
+
+    if (xSep > xAt) {
+      tail = request.substr(xSep);
+      semVer = request.substring(xAt + 1, xSep);
+    } else {
+      semVer = request.substr(xAt + 1);
+    }
+    request = tmp + tail;
+  }
+  return {request, semVer}
+};
+
+// from https://github.com/sindresorhus/semver-regex/blob/master/index.js
+const semVerRegex = /\bv?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[\da-z\-]+(?:\.[\da-z\-]+)*)?(?:\+[\da-z\-]+(?:\.[\da-z\-]+)*)?\b/ig;
+
+internals.semVerMatch = (semVer, ver) => {
+  // support x.x.x format ONLY
+  const isAny = (v) => {
+    return !v || (v === "x" || v === "X" || v === "*");
+  };
+
+  if (isAny(semVer)) {
+    return true;
+  }
+
+  const svSplits = semVer.split(".");
+  const verSplits = ver.split(".");
+  for (let i = 0; i < verSplits.length; i++) {
+    if (i >= svSplits.length) {
+      return true;
+    } else if (!isAny(svSplits[i])) {
+      if (svSplits[i] !== verSplits[i]) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+};
+
+internals.semVerCompare = (a, b) => {
+  if (a === b) {
+    return 0;
+  }
+
+  const mA = a.substr(1).match(semVerRegex);
+  const mB = b.substr(1).match(semVerRegex);
+  if (mA && mB) {
+    const aSp = mA[0].split(".");
+    const bSp = mB[0].split(".");
+    for (let i = 0; i < aSp.length; i++) {
+      const aN = parseInt(aSp[i], 10);
+      const bN = parseInt(bSp[i], 10);
+      if (aN > bN) {
+        return 1;
+      }
+      if (aN < bN) {
+        return -1;
+      }
+    }
+    return 0;
+  }
+
+  return a > b ? 1 : -1;
+};
+
+internals.getModuleVersions = (modDir) => {
+  if (!versionsMap.has(modDir) && fs.existsSync(modDir)) {
+    versionsMap.set(modDir, fs.readdirSync(modDir).sort(internals.semVerCompare));
+  }
+
+  return versionsMap.get(modDir);
+};
+
+
 function flatResolveLookupPaths(request, parent) {
-  if (path.isAbsolute(request) || internals.isRelativePathRequest(request)) {
+  if (internals.useOriginalLookup(request)) {
     return this._flat_orig_resolveLookupPaths(request, parent);
   }
+
+  const reqParts = internals.parseRequest(request);
+  request = reqParts.request;
 
   debug(`flat _resolveLookupPaths: request ${request} parent.id ${parent && parent.id}`);
 
@@ -301,9 +392,7 @@ function flatResolveLookupPaths(request, parent) {
       pkg._depResolutions = require(ff);
     } else {
       //
-      // Not able to resolve the version of a dependency.
-      // Can either dynamically generate _depResolutions using semver
-      // or just fallback to original node module resolution.
+      // can't find _depResolutions, fallback to original node module resolution.
       //
       assert(flatFlag === undefined,
         "flat module can't determine dep resolution but flat mode is already " + flatFlag);
@@ -321,7 +410,19 @@ function flatResolveLookupPaths(request, parent) {
     return r && r.resolved;
   };
 
-  let version = getResolvedVersion();
+  const getVersion = (semVer, modDir) => {
+    if (semVer) {
+      const versions = internals.getModuleVersions(modDir)
+        .map((x) => x.substr(1)) // sort and remove leading 'v'
+        .filter((v) => internals.semVerMatch(semVer, v));
+      return versions.length > 0 && versions[versions.length - 1];
+    } else {
+      return getResolvedVersion();
+    }
+  };
+
+  const moduleDir = path.join(topDir.dir, nodeModules, moduleName);
+  const version = getVersion(reqParts.semVer, moduleDir);
 
   //
   // unable to resolve a version for a dependency, error out
@@ -334,20 +435,22 @@ function flatResolveLookupPaths(request, parent) {
   }
 
   if (flatFlag === undefined) {
-    flatFlag = true;
-    flatFlagMap.set(topDir.dir, flatFlag);
+    flatFlagMap.set(topDir.dir, true);
   }
 
-  if (!version.startsWith("v")) {
-    version = "v" + version;
+  return [request, [path.join(moduleDir, version.startsWith("v") ? version : "v" + version)]];
+}
+
+function flatFindPath(request, paths, isMain) {
+  if (!internals.useOriginalLookup(request)) {
+    request = internals.parseRequest(request).request;
   }
 
-  const moduleDir = path.join(topDir.dir, nodeModules, moduleName);
-
-  return [request, [path.join(moduleDir, version)]];
+  return this._flat_orig_findPath(request, paths, isMain);
 }
 
 Module._resolveLookupPaths = flatResolveLookupPaths;
+Module._findPath = flatFindPath;
 
 module.exports = {
   flatResolveLookupPaths,

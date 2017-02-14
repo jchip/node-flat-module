@@ -136,6 +136,28 @@ describe("flat-module", function () {
     });
   });
 
+  it("should load a module with exact explicit version", () => {
+    const x = require(Path.resolve("tests/test_by_version_exact"));
+    expect(x.foo.version).to.equal("1.0.0");
+  });
+
+  it("should load a module with explicit version", () => {
+    const x = require(Path.resolve("tests/test_by_version"));
+    expect(x.foo3.version).to.equal("3.10.12");
+  });
+
+  it("should load a module's specific file with explicit version", () => {
+    require(Path.resolve("tests/test_by_version_file"));
+  });
+
+  it("should fail when no matching with explicit version", () => {
+    expect(() => require(Path.resolve("tests/test_by_version_no_matching"))).to.throw();
+  });
+
+  it("should fail when a file is missing with explicit version", () => {
+    expect(() => require(Path.resolve("tests/test_by_version_missing"))).to.throw();
+  });
+
   describe("when in node repl", function () {
     it("should return proper paths when parent.filename is null (repl)", () => {
       const parent = {
@@ -218,6 +240,76 @@ describe("flat-module", function () {
 
       it("should return false for foo/bar", () => {
         expect(flatModule.internals.isRelativePathRequest("foo/bar")).to.be.false;
+      });
+    });
+
+    describe("semVerMatch", function () {
+      const testMatch = (r, sv, vers) => {
+        vers.forEach(
+          (v) => chai.assert(flatModule.internals.semVerMatch(sv, v) === r,
+            `Expect version ${v} to ${!r && "not" || ""} match semver ${sv}`)
+        );
+      };
+
+      it("should match */x/X for anything", () => {
+        testMatch(true, "*", ["", "1.1.2", "0.0.1", "1", "x"]);
+        testMatch(true, "x", ["", "1.1.2", "0.0.1", "1", "x"]);
+        testMatch(true, "X", ["", "1.1.2", "0.0.1", "1", "x"]);
+        testMatch(true, "", ["", "1.1.2", "0.0.1", "1", "x"]);
+      });
+
+      it("should match 3/3. for major v3", () => {
+        const v3 = ["3", "3.", "3.1", "3.10.", "3.9.12"];
+        const v3sv = ["3", "3."];
+        v3sv.forEach((sv) => {
+          testMatch(true, sv, v3)
+        });
+      });
+
+      it("should match 3.x/3.x./3.x.x for major v3", () => {
+        const v3 = ["3", "3.", "3.1", "3.10.", "3.9.12"];
+        const v3sv = ["3.x", "3.x.", "3.x.x", "3.*", "3.*.", "3.X.*", "3.x.X", "3.x.*"];
+        v3sv.forEach((sv) => {
+          testMatch(true, sv, v3)
+        });
+      });
+
+      it("should not match 3 for non major v3", () => {
+        const nonV3 = ["1.3", "2.3.", "2.3.x", "2.", "2.x.x", ".3", ".x.3", "0.x.3", "0.0.3"];
+        ["3", "3.", "3.X", "3.x.X", "3.X.*"].forEach((sv) => {
+          testMatch(false, sv, nonV3);
+        });
+      });
+
+      it("should match exact sv", () => {
+        const vers = ["0", "0.0", "0.1", "0.1.3", "1.2.3", "3.2", "1.2", "2", "2.3.3"];
+        vers.forEach((v) => testMatch(true, v, [v]));
+      });
+
+      it("should match 2.x.5 for any minor", () => {
+        const vm = ["2.1.5", "2.15.5", "2.0.5"];
+        testMatch(true, "2.x.5", vm);
+      });
+
+      it("should not match 2.x.5 for bad major/patch", () => {
+        const vm = ["3.2.4", "1.20.5", "0.2.3"];
+        testMatch(false, "2.x.5", vm);
+      });
+    });
+
+    describe("semVerCompare", function () {
+      it("should return 0 for same values", () => {
+        expect(flatModule.internals.semVerCompare("12345", "12345")).to.equal(0);
+      });
+
+      it("should return 0 for same version", () => {
+        expect(flatModule.internals.semVerCompare("v10.11.23", "x10.11.23")).to.equal(0);
+        expect(flatModule.internals.semVerCompare("v10.11.23", "v10.11.23")).to.equal(0);
+      });
+
+      it("should match strings as is", () => {
+        expect(flatModule.internals.semVerCompare("hello.world", "foo.bar")).to.equal(1);
+        expect(flatModule.internals.semVerCompare("foo.bar", "hello.world")).to.equal(-1);
       });
     })
 
