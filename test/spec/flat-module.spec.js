@@ -106,6 +106,11 @@ describe("flat-module", function () {
     expect(linked.zoo.version).to.equal("symlink");
   });
 
+  it("should load the latest of a dependency w/o resolved", () => {
+    const x = require(Path.resolve("tests/test_missing-resolved"));
+    expect(x.version).to.equal("3.10.12");
+  });
+
   it("should fail if can't find package.json", () => {
     const tmpDir = "/tmp/flat-test/foo";
     mkdirp.sync(tmpDir);

@@ -404,20 +404,36 @@ function flatResolveLookupPaths(request, parent) {
     return pkg._depResolutions;
   };
 
-  const getResolvedVersion = () => {
+  const matchLatestSemVer = (semVer, modDir) => {
+    const versions = internals.getModuleVersions(modDir)
+      .map((x) => x.substr(1)) // remove leading 'v'
+      .filter((v) => internals.semVerMatch(semVer, v));
+    return versions.length > 0 && versions[versions.length - 1];
+  };
+
+  const getResolvedVersion = (modDir) => {
     const depRes = getDepResolutions(topDir, pkg);
     const r = depRes[moduleName];
-    return r && r.resolved;
+    if (!r) {
+      //
+      // dynamically match latest version
+      //
+      if (pkg && flatFlag !== false) {
+        const resolved = matchLatestSemVer("*", modDir)
+        depRes[moduleName] = {resolved};
+        return resolved;
+      }
+      return undefined;
+    }
+
+    return r.resolved;
   };
 
   const getVersion = (semVer, modDir) => {
     if (semVer) {
-      const versions = internals.getModuleVersions(modDir)
-        .map((x) => x.substr(1)) // sort and remove leading 'v'
-        .filter((v) => internals.semVerMatch(semVer, v));
-      return versions.length > 0 && versions[versions.length - 1];
+      return matchLatestSemVer(semVer, modDir);
     } else {
-      return getResolvedVersion();
+      return getResolvedVersion(modDir);
     }
   };
 
@@ -438,7 +454,8 @@ function flatResolveLookupPaths(request, parent) {
     flatFlagMap.set(topDir.dir, true);
   }
 
-  return [request, [path.join(moduleDir, version.startsWith("v") ? version : "v" + version)]];
+  return [request, [path.join(moduleDir,
+    version.startsWith("v") ? version : "v" + version)]];
 }
 
 function flatFindPath(request, paths, isMain) {
