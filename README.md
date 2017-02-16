@@ -62,3 +62,9 @@ Node's `node_modules` system.
     - The application linking a module will have a `__linked_target.json` file with linking info for each linked module.
     - Dependencies for the linked module will be solely resolved from the application's `node_modules`.
   - Will fallback to original module system if no dependencies resolution information found.
+
+## A sample
+
+Here is how an application's `node_modules` might look like.  Captured from this module's test fixtures.
+
+![sample](docs/sample_nm.png)
