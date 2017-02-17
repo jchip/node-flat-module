@@ -1,5 +1,6 @@
 "use strict";
 
+const requireAt = require("require-at");
 const Path = require("path");
 const Crypto = require("crypto");
 const Fs = require("fs");
@@ -161,6 +162,13 @@ describe("flat-module", function () {
 
   it("should fail when a file is missing with explicit version", () => {
     expect(() => require(Path.resolve("tests/test_by_version_missing"))).to.throw();
+  });
+
+  it("should work with require-at", () => {
+    process.chdir(__dirname);
+    const requireAtApp = requireAt(Path.resolve("../fixtures/another-app"));
+    const foo = requireAtApp.resolve("foo");
+    expect(foo).to.include("test/fixtures/another-app/node_modules/foo/v9.10.5/foo/index.js");
   });
 
   describe("when in node repl", function () {

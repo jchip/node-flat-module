@@ -20,8 +20,9 @@
     "istanbul": "^0.4.5",
     "mkdirp": "^0.5.1",
     "mocha": "^3.2.0",
-    "rimraf": "^2.5.4",
-    "optional-require": "^1.0.0"
+    "optional-require": "^1.0.0",
+    "require-at": "^1.0.0",
+    "rimraf": "^2.5.4"
   },
   "engines": {
     "node": ">= 4"
