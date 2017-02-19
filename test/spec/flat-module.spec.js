@@ -9,15 +9,17 @@ const expect = chai.expect;
 const mkdirp = require("mkdirp");
 const rimraf = require("rimraf");
 
+const versionsDir = "__fv_";
+
 function linkModule(name, app, options) {
   options = options || {};
   const fixtures = Path.join(__dirname, "..", "fixtures");
   const modLoc = Path.join(fixtures, name);
-  const modLinkVersion = "v_symlink_" + Crypto.createHash("md5").update(modLoc)
-      .digest("base64").replace(/[+/]/g, (m) => m === "+" ? "-" : "_").substr(0, 22);
+  const modLinkVersion = "symlink_" + Crypto.createHash("md5").update(modLoc)
+    .digest("base64").replace(/[+/]/g, (m) => m === "+" ? "-" : "_").substr(0, 22);
   const appDir = Path.join(fixtures, app);
   const appNmMod = Path.join(appDir, "node_modules", name);
-  const modLinkVersionDir = Path.join(appNmMod, modLinkVersion);
+  const modLinkVersionDir = Path.join(appNmMod, versionsDir, modLinkVersion);
   mkdirp.sync(modLinkVersionDir);
   const modLinkDir = Path.join(modLinkVersionDir, name);
   if (!Fs.existsSync(modLinkDir)) {
@@ -26,22 +28,22 @@ function linkModule(name, app, options) {
   if (!options.noTarget) {
     const linkedFile = Path.join(modLinkVersionDir, "__linked_target.json");
     Fs.writeFileSync(linkedFile, JSON.stringify({
-        target: modLoc,
-        appDir,
-        resolved: modLinkVersion
-      }, null, 2) + "\n");
+      target: modLoc,
+      appDir,
+      resolved: modLinkVersion
+    }, null, 2) + "\n");
   }
   if (!options.noFrom) {
     const modLinkFrom = Path.join(modLoc, "node_modules", "__linked_from.json");
     Fs.writeFileSync(modLinkFrom, JSON.stringify({
-        [appDir]: {
-          _depResolutions: {
-            foo: {
-              resolved: "2.0.1"
-            }
+      [appDir]: {
+        _depResolutions: {
+          foo: {
+            resolved: "2.0.1"
           }
         }
-      }, null, 2) + "\n");
+      }
+    }, null, 2) + "\n");
   }
   const depResFile = Path.join(appDir, "node_modules", "__dep_resolutions.json");
   const depRes = require(depResFile);
@@ -63,7 +65,7 @@ describe("flat-module", function () {
     rimraf.sync("../zoo/node_modules/__linked_from.json");
     rimraf.sync("/tmp/flat-test");
     linkModule("zoo", "app");
-    linkModule("fox", "app", {noFrom: true});
+    linkModule("fox", "app", { noFrom: true });
   });
 
   after(() => {
@@ -85,7 +87,7 @@ describe("flat-module", function () {
   });
 
   it("should load module with CWD within an installed module", () => {
-    process.chdir("node_modules/car/v1.0.0/car/lib");
+    process.chdir(`node_modules/car/${versionsDir}/1.0.0/car/lib`);
     require(Path.resolve("index"));
   });
 
@@ -137,8 +139,8 @@ describe("flat-module", function () {
         name: "foo",
         version: "1.1.0",
       },
-      qqq1: {qqq1: 1000},
-      qqq2: {qqq2: 1000}
+      qqq1: { qqq1: 1000 },
+      qqq2: { qqq2: 1000 }
     });
   });
 
@@ -168,7 +170,7 @@ describe("flat-module", function () {
     process.chdir(__dirname);
     const requireAtApp = requireAt(Path.resolve("../fixtures/another-app"));
     const foo = requireAtApp.resolve("foo");
-    expect(foo).to.include("test/fixtures/another-app/node_modules/foo/v9.10.5/foo/index.js");
+    expect(foo).to.include(`test/fixtures/another-app/node_modules/foo/${versionsDir}/9.10.5/foo/index.js`);
   });
 
   describe("when in node repl", function () {
@@ -182,7 +184,7 @@ describe("flat-module", function () {
         "paths": []
       };
       expect(flatModule.flatResolveLookupPaths("foo", parent)).to.deep.equal(["foo",
-        [Path.resolve("node_modules/foo/v1.1.0")]]);
+        [Path.resolve(`node_modules/foo/${versionsDir}/1.1.0`)]]);
     });
 
     it("should load module with CWD below dir of node_modules (repl)", () => {
@@ -196,7 +198,7 @@ describe("flat-module", function () {
       };
       process.chdir("lib/lib2");
       expect(flatModule.flatResolveLookupPaths("foo", parent)).to.deep.equal(
-        ["foo", [Path.resolve("../../node_modules/foo/v1.1.0")]]
+        ["foo", [Path.resolve(`../../node_modules/foo/${versionsDir}/1.1.0`)]]
       );
     });
   });
@@ -207,7 +209,7 @@ describe("flat-module", function () {
       it("should stop at stopDir", () => {
         const dir = Path.normalize("/tmp/flat-test/pkg1/pkg-stop/pkg2/pkg3");
         mkdirp.sync(dir);
-        Fs.writeFileSync(Path.normalize("/tmp/flat-test/pkg1/package.json"), JSON.stringify({hello: 1}));
+        Fs.writeFileSync(Path.normalize("/tmp/flat-test/pkg1/package.json"), JSON.stringify({ hello: 1 }));
         const pkg = flatModule.internals.findNearestPackage(dir, Path.normalize("/tmp/flat-test/pkg1/pkg-stop"));
         expect(pkg).to.be.undefined;
       });
@@ -316,8 +318,9 @@ describe("flat-module", function () {
       });
 
       it("should return 0 for same version", () => {
-        expect(flatModule.internals.semVerCompare("v10.11.23", "x10.11.23")).to.equal(0);
-        expect(flatModule.internals.semVerCompare("v10.11.23", "v10.11.23")).to.equal(0);
+        expect(flatModule.internals.semVerCompare("10.11.23", "10.11.23")).to.equal(0);
+        expect(flatModule.internals.semVerCompare("v10.11.23", "10.11.23")).to.equal(0);
+        expect(flatModule.internals.semVerCompare("10.11.23", "v10.11.23")).to.equal(0);
       });
 
       it("should match strings as is", () => {

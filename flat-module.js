@@ -14,6 +14,7 @@ const linkedMap = new Map();
 const topDirMap = new Map();
 const flatFlagMap = new Map();
 const versionsMap = new Map();
+const versionsDir = "__fv_";
 
 const debug = Module._debug;
 const nodeModules = "node_modules";
@@ -141,7 +142,7 @@ internals.searchTopDir = (originDir) => {
     }
   }
 
-  return {dir, linkedInfo};
+  return { dir, linkedInfo };
 };
 
 // search from <dir> up to <stopDir> or / for the file package.json
@@ -173,10 +174,15 @@ internals.findModuleName = (dir, request) => {
     return request;
   }
   dir = path.join(dir, nodeModules);
+
+  const hasVersionsDir = (d) => fs.existsSync(path.join(d, versionsDir));
+  const hasPkgJson = (d) => fs.existsSync(path.join(d, "package.json"));
+
   for (let i = 0; i < splits.length; i++) {
     dir = path.join(dir, splits[i]);
-    if (!fs.existsSync(dir)) {
-      return splits.slice(0, i).join("/");
+    if (hasVersionsDir(dir) || hasPkgJson(dir)) {
+      request = splits.slice(0, i + 1).join("/");
+      break;
     }
   }
   return request;
@@ -219,7 +225,7 @@ internals.parseRequest = (request) => {
     }
     request = tmp + tail;
   }
-  return {request, semVer}
+  return { request, semVer }
 };
 
 // from https://github.com/sindresorhus/semver-regex/blob/master/index.js
@@ -255,8 +261,8 @@ internals.semVerCompare = (a, b) => {
     return 0;
   }
 
-  const mA = a.substr(1).match(semVerRegex);
-  const mB = b.substr(1).match(semVerRegex);
+  const mA = a.match(semVerRegex);
+  const mB = b.match(semVerRegex);
   if (mA && mB) {
     const aSp = mA[0].split(".");
     const bSp = mB[0].split(".");
@@ -278,12 +284,15 @@ internals.semVerCompare = (a, b) => {
 
 internals.getModuleVersions = (modDir) => {
   if (!versionsMap.has(modDir) && fs.existsSync(modDir)) {
-    versionsMap.set(modDir, fs.readdirSync(modDir).sort(internals.semVerCompare));
+    versionsMap.set(
+      modDir,
+      fs.readdirSync(path.join(modDir, versionsDir))
+        .sort(internals.semVerCompare)
+    );
   }
 
   return versionsMap.get(modDir);
 };
-
 
 function flatResolveLookupPaths(request, parent) {
   if (internals.useOriginalLookup(request)) {
@@ -301,11 +310,11 @@ function flatResolveLookupPaths(request, parent) {
     // if parentDir is under CWD, look for node_modules
     if (pathIsInside(originDir, cwd)) {
       if (fs.existsSync(path.join(originDir, nodeModules))) {
-        return {dir: originDir};
+        return { dir: originDir };
       } else {
         const nmIndex = originDir.lastIndexOf(path.sep + nodeModules);
         if (nmIndex >= 0) {
-          return {dir: path.join(originDir.substr(0, nmIndex + nodeModules.length + 1), "..")};
+          return { dir: path.join(originDir.substr(0, nmIndex + nodeModules.length + 1), "..") };
         }
       }
     }
@@ -406,7 +415,6 @@ function flatResolveLookupPaths(request, parent) {
 
   const matchLatestSemVer = (semVer, modDir) => {
     const versions = internals.getModuleVersions(modDir)
-      .map((x) => x.substr(1)) // remove leading 'v'
       .filter((v) => internals.semVerMatch(semVer, v));
     return versions.length > 0 && versions[versions.length - 1];
   };
@@ -420,7 +428,7 @@ function flatResolveLookupPaths(request, parent) {
       //
       if (pkg && flatFlag !== false) {
         const resolved = matchLatestSemVer("*", modDir)
-        depRes[moduleName] = {resolved};
+        depRes[moduleName] = { resolved };
         return resolved;
       }
       return undefined;
@@ -454,8 +462,7 @@ function flatResolveLookupPaths(request, parent) {
     flatFlagMap.set(topDir.dir, true);
   }
 
-  return [request, [path.join(moduleDir,
-    version.startsWith("v") ? version : "v" + version)]];
+  return [request, [path.join(moduleDir, versionsDir, version)]];
 }
 
 function flatFindPath(request, paths, isMain) {
