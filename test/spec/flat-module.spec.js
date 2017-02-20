@@ -111,7 +111,54 @@ describe("flat-module", function () {
 
   it("should load the latest of a dependency w/o resolved", () => {
     const x = require(Path.resolve("tests/test_missing-resolved"));
-    expect(x.version).to.equal("3.10.12");
+    expect(x.version).to.equal("5.10.7");
+  });
+
+  it("should load module w/o versions dir", () => {
+    const x = requireAt(Path.join(__dirname, "../fixtures/app/"), "no-fv-dir");
+    expect(x.foo.version).to.equal("2.0.1");
+    expect(x.version).to.equal("1.0.0");
+    expect(x.name).to.equal("no-fv-dir");
+  });
+
+  it("should load latest from versions dir w/o default version", () => {
+    const x = requireAt(Path.join(__dirname, "../fixtures/app"), "car");
+    expect(x.pkg.name).to.equal("car");
+    expect(x.pkg.version).to.equal("1.0.0");
+    expect(x.foo.version).to.equal("1.1.0");
+  });
+
+  it("should load default version with file", () => {
+    const x = requireAt(Path.join(__dirname, "../fixtures/app"), "default-file");
+    expect(x.name).to.equal("default-file");
+    expect(x.version).to.equal("11.29.3");
+    expect(x.foo.version).to.equal("5.10.7");
+  });
+
+  it("should load default version with file that's empty", () => {
+    const x = requireAt(Path.join(__dirname, "../fixtures/app"), "default-file-empty");
+    expect(x.name).to.equal("default-file-empty");
+    expect(x.version).to.equal("14.5.4");
+    expect(x.foo.version).to.equal("5.10.7");
+  });
+
+
+  it("should load default version w/o __fv_", () => {
+    const x = requireAt(Path.join(__dirname, "../fixtures/app"), "default-none");
+    expect(x.name).to.equal("default-none");
+    expect(x.version).to.equal("21.19.31");
+    expect(x.foo.version).to.equal("3.7.1");
+  });
+
+  it("should fail to load specific version of module with only default version", () => {
+    expect(() => requireAt(Path.join(__dirname, "../fixtures/app"), "default-none@3.5.9")).to.throw();
+  });
+
+  it("should load module with only default version even if resolved to a diff version", () => {
+    const x = requireAt(Path.join(__dirname, "../fixtures/app"), "default-none-b");
+    expect(x.name).to.equal("default-none-b");
+    expect(x.version).to.equal("16.39.131");
+    expect(x.foo.version).to.equal("3.7.1");
   });
 
   it("should fail if can't find package.json", () => {

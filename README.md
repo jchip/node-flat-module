@@ -48,6 +48,9 @@ Node's `node_modules` system.
 -   No nested `node_modules`.  Only one `node_modules`.
     -   Each module is installed under a directory `node_modules/<module_name>/__fv_` that contains all the versions needed.  Therefore, one instance of each version of any module.
         -   For example, `lodash` v3 and v4 would be installed as `node_modules/lodash/__fv_/3.10.1/lodash` and `node_modules/lodash/__fv_/4.17.4/lodash`. 
+    -   The package manager can choose to install a **_default version_** under the first level directly, and save the flat version as `_flatVersion` in its `package.json`.
+        -   If a module only has one version installed, then the `__fv_` directory can be skipped.
+        -   **_Linked module cannot be the default version._**
 -   Dependencies information is retained and checked at run time.
     -   The file `package.json` will be significant for dependencies version resolution at run time.
     -   When package manager installs a module, it inserts a section `_depResolutions` into `package.json`.
@@ -64,7 +67,7 @@ Node's `node_modules` system.
     -   Dependencies for the linked module will be solely resolved from the application's `node_modules`.
 -   Will fallback to original module system if no dependencies resolution information found.
 
-## A sample
+## A Sample
 
 Here is how an application's `node_modules` might look like.  Captured from this module's test fixtures.
 

@@ -282,16 +282,29 @@ internals.semVerCompare = (a, b) => {
   return a > b ? 1 : -1;
 };
 
-internals.getModuleVersions = (modDir) => {
+internals.getModuleVersions = (modName, modDir) => {
   if (!versionsMap.has(modDir) && fs.existsSync(modDir)) {
-    versionsMap.set(
-      modDir,
-      fs.readdirSync(path.join(modDir, versionsDir))
-        .sort(internals.semVerCompare)
-    );
+    const vDir = path.join(modDir, versionsDir);
+    let versions = { all: !fs.existsSync(vDir) ? [] : fs.readdirSync(vDir) };
+
+    //
+    // does there exist a default version
+    //
+    const pkgFile = path.join(modDir, "package.json");
+    if (fs.existsSync(pkgFile)) {
+      const pkg = require(pkgFile);
+      if (versions.all.indexOf(pkg._flatVersion) < 0) {
+        versions.all.push(pkg._flatVersion);
+      }
+
+      versions.default = pkg._flatVersion;
+    }
+
+    versions.all = versions.all.sort(internals.semVerCompare)
+    versionsMap.set(modName, versions);
   }
 
-  return versionsMap.get(modDir);
+  return versionsMap.get(modName);
 };
 
 function flatResolveLookupPaths(request, parent) {
@@ -413,21 +426,20 @@ function flatResolveLookupPaths(request, parent) {
     return pkg._depResolutions;
   };
 
-  const matchLatestSemVer = (semVer, modDir) => {
-    const versions = internals.getModuleVersions(modDir)
-      .filter((v) => internals.semVerMatch(semVer, v));
-    return versions.length > 0 && versions[versions.length - 1];
+  const matchLatestSemVer = (semVer, versions) => {
+    const matched = versions.all.filter((v) => internals.semVerMatch(semVer, v));
+    return matched.length > 0 && matched[matched.length - 1];
   };
 
-  const getResolvedVersion = (modDir) => {
+  const getResolvedVersion = (versions) => {
     const depRes = getDepResolutions(topDir, pkg);
     const r = depRes[moduleName];
-    if (!r) {
+    if (!r || versions.all.indexOf(r.resolved) < 0) {
       //
       // dynamically match latest version
       //
       if (pkg && flatFlag !== false) {
-        const resolved = matchLatestSemVer("*", modDir)
+        const resolved = matchLatestSemVer("*", versions);
         depRes[moduleName] = { resolved };
         return resolved;
       }
@@ -437,16 +449,11 @@ function flatResolveLookupPaths(request, parent) {
     return r.resolved;
   };
 
-  const getVersion = (semVer, modDir) => {
-    if (semVer) {
-      return matchLatestSemVer(semVer, modDir);
-    } else {
-      return getResolvedVersion(modDir);
-    }
-  };
-
   const moduleDir = path.join(topDir.dir, nodeModules, moduleName);
-  const version = getVersion(reqParts.semVer, moduleDir);
+  const versions = internals.getModuleVersions(moduleName, moduleDir);
+  const version = reqParts.semVer
+    ? matchLatestSemVer(reqParts.semVer, versions)
+    : getResolvedVersion(versions);
 
   //
   // unable to resolve a version for a dependency, error out
@@ -462,7 +469,11 @@ function flatResolveLookupPaths(request, parent) {
     flatFlagMap.set(topDir.dir, true);
   }
 
-  return [request, [path.join(moduleDir, versionsDir, version)]];
+  const versionFp = version === versions.default
+    ? path.join(topDir.dir, nodeModules)
+    : path.join(moduleDir, versionsDir, version);
+
+  return [request, [versionFp]];
 }
 
 function flatFindPath(request, paths, isMain) {
