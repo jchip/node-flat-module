@@ -13,35 +13,40 @@ const semver = require("semver");
 const semverSort = require("semver-sort");
 
 const versionsMap = new Map();
+const flatVDir = "__fv_";
 
+const sourceDir = Path.resolve("node_modules");
 const targetDir = Path.resolve("flat_node_modules");
 
 function moveThisModule(dir) {
   const pkgFile = Path.join(dir, "package.json");
   const pkg = require(pkgFile);
-  const version = "v" + pkg.version;
-  const targetNmDir = Path.join(targetDir, pkg.name, version, pkg.name);
+  const version = pkg.version;
+  const targetNmDir = Path.join(targetDir, pkg.name, flatVDir, version, pkg.name);
+  const targetDefault = Path.join(targetDir, pkg.name);
+  const targetPkgFile = Path.join(targetDefault, "package.json");
 
-  if (!Fs.existsSync(targetNmDir)) {
+  let targetPkg = {};
+  if (Fs.existsSync(targetPkgFile)) {
+    targetPkg = require(targetPkgFile);
+  }
+  if (!Fs.existsSync(targetNmDir) && targetPkg.version !== pkg.version) {
     if (!versionsMap.has(pkg.name)) {
       versionsMap.set(pkg.name, [pkg.version]);
     } else {
       versionsMap.get(pkg.name).push(pkg.version);
     }
-    console.log(`moving ${dir} to ${targetNmDir}`);
+    console.log(`copying ${dir} to ${targetNmDir}`);
     shell.mkdir("-p", targetNmDir);
-    const files = Fs.readdirSync(Path.join(dir)).map((x) => Path.join(dir, x));
-    shell.mv(files, targetNmDir);
-    Fs.rmdirSync(dir);
-  } else {
-    shell.rm("-rf", dir);
+    const files = Fs.readdirSync(Path.join(dir)).filter((x) => x !== "node_modules").map((x) => Path.join(dir, x));
+    shell.cp("-Rf", files, targetNmDir);
   }
 }
 
 /*
  * Recursively go down node_modules until there's no more
- * Then move the module to <root>/node_modules/<version> if it doesn't exist
- * else just delete it from disk
+ * Then move the module to <root>/node_modules/__fv_/<mod_name>/</name><version> 
+ * if it doesn't exist else just delete it from disk
  *
  */
 
@@ -49,8 +54,6 @@ function moveModules(dir) {
   const dirNm = Path.join(dir, "node_modules");
   if (Fs.existsSync(dirNm)) {
     moveModules(dirNm);
-    shell.rm("-rf", Path.join(dirNm, ".bin"));
-    Fs.rmdirSync(dirNm);
   }
   const pkgFile = Path.join(dir, "package.json");
   if (Fs.existsSync(pkgFile)) {
@@ -104,31 +107,36 @@ function sortVersionMaps() {
 }
 
 function readVersions() {
-  const modules = Fs.readdirSync(Path.resolve("node_modules")).filter((x) => x !== ".bin" && !x.startsWith("__dep"));
+  if (!Fs.existsSync(targetDir)) {
+    return;
+  }
+  const modules = Fs.readdirSync(targetDir).filter((x) => x !== ".bin" && !x.startsWith("__dep"));
   modules.forEach((m) => {
-    versionsMap.set(m, Fs.readdirSync(Path.resolve("node_modules", m)));
+    const vDir = Path.resolve(targetDir, m, flatVDir);
+    if (Fs.existsSync(vDir)) {
+      versionsMap.set(m, Fs.readdirSync(vDir));
+    } else {
+      versionsMap.set(m, [require(Path.resolve(targetDir, m, "package.json"))._flatVersion]);
+    }
   });
 }
 
 function moveModulesToFlat() {
 
-  if (Fs.existsSync(Path.resolve("node_modules", "__dep_resolutions.json"))) {
+  if (Fs.existsSync(Path.resolve(targetDir, "__dep_resolutions.json"))) {
     console.log("already flat");
     readVersions();
     sortVersionMaps();
     return;
   }
 
-  moveModules(Path.resolve("node_modules"));
-
-  shell.mv(Path.resolve("flat_node_modules", "*"), Path.resolve("node_modules"));
-  Fs.rmdirSync(Path.resolve("flat_node_modules"));
+  moveModules(sourceDir);
 }
 
 let appDepRes = {};
 
 function captureAppDepResolutions() {
-  const appDepResFile = Path.resolve("node_modules", "__dep_resolutions.json");
+  const appDepResFile = Path.resolve(targetDir, "__dep_resolutions.json");
   if (Fs.existsSync(appDepResFile)) {
     appDepRes = require(appDepResFile);
     Object.keys(appDepRes).forEach((m) => {
@@ -137,13 +145,13 @@ function captureAppDepResolutions() {
       }
     });
   }
-  const topLevelModules = Fs.readdirSync(Path.resolve("node_modules")).filter((x) => x !== ".bin");
+  const topLevelModules = Fs.readdirSync(sourceDir).filter((x) => x !== ".bin");
   topLevelModules.forEach((m) => {
-    const mDir = Path.resolve("node_modules", m);
+    const mDir = Path.resolve(targetDir, m);
     const pkgFile = Path.join(mDir, "package.json");
     if (Fs.existsSync(pkgFile)) {
       const pkg = require(pkgFile);
-      appDepRes[pkg.name] = {resolved: pkg.version};
+      appDepRes[pkg.name] = { resolved: pkg.version };
     }
   });
 }
@@ -151,56 +159,79 @@ function captureAppDepResolutions() {
 function makeAppDepResolutions() {
   const appPkg = require(Path.resolve("package.json"));
   const appRes = makeDepResolutions(appPkg, true, appDepRes);
-  Fs.writeFileSync(Path.resolve("node_modules", "__dep_resolutions.json"), JSON.stringify(appRes, null, 2));
+  Fs.writeFileSync(Path.resolve(targetDir, "__dep_resolutions.json"), JSON.stringify(appRes, null, 2));
 }
 
 function makeDepDepResolutions() {
-  const modules = Fs.readdirSync(Path.resolve("node_modules")).filter((x) => x !== ".bin" && !x.startsWith("__dep"));
+  const modules = Fs.readdirSync(targetDir).filter((x) => x !== ".bin" && !x.startsWith("__dep"));
   modules.forEach((m) => {
     versionsMap.get(m).forEach((v) => {
-      const mDir = Path.resolve("node_modules", m, v, m);
-      const pkgFile = Path.join(mDir, "package.json");
-      const pkg = require(pkgFile);
-      pkg._depResolutions = makeDepResolutions(pkg, false);
-      Fs.writeFileSync(pkgFile, JSON.stringify(pkg, null, 2));
+      const mDir = Path.resolve(targetDir, m, flatVDir, v, m);
+      if (Fs.existsSync(mDir)) {
+        const pkgFile = Path.join(mDir, "package.json");
+        const pkg = require(pkgFile);
+        pkg._depResolutions = makeDepResolutions(pkg, false);
+        Fs.writeFileSync(pkgFile, JSON.stringify(pkg, null, 2));
+      }
     });
   });
 }
 
 function relinkBin(dir, depRes) {
-  const binDir = Path.join(dir, ".bin");
+  const binDir = Path.join(sourceDir, ".bin");
+  const targetBinDir = Path.join(targetDir, ".bin");
+  shell.mkdir("-p", targetBinDir);
   const links = Fs.readdirSync(binDir);
   const cwd = process.cwd();
-  process.chdir(binDir);
+  process.chdir(targetBinDir);
   links.forEach((link) => {
     const linkFp = Path.join(binDir, link);
     const target = Fs.readlinkSync(linkFp);
     const splits = target.split("/");
     const modName = splits[1];
-    let resolved;
     let res = depRes[modName];
 
-    if (res) {
-      resolved = res.resolved;
-    } else {
-      resolved = versionsMap.get(modName)[0];
-    }
-
-    if (!resolved.startsWith("v")) {
-      resolved = "v" + resolved;
-    }
 
     console.log("link", link, "target", target, splits);
     let newSplits = splits.slice(2);
-    newSplits.unshift("..", modName, resolved, modName);
+    const versions = versionsMap.get(modName);
+    if (versions.length > 1) {
+      const resolved = res ? res.resolved : versions[0];
+      newSplits.unshift("..", modName, flatVDir, resolved, modName);
+    } else {
+      newSplits.unshift("..", modName);
+    }
+
     const newTarget = Path.join.apply(Path, newSplits);
-    const newTargetFp = Path.join(binDir, newTarget);
+    const newTargetFp = Path.join(targetBinDir, newTarget);
     console.log("link", link, "target", target, "new target", newTarget, newTargetFp);
     if (!Fs.existsSync(newTargetFp)) {
       console.log("newTarget", newTarget, "doesn't exist");
     } else {
-      Fs.unlinkSync(linkFp);
+      if (Fs.existsSync(link)) {
+        Fs.unlinkSync(link);
+      }
       Fs.symlinkSync(newTarget, link);
+    }
+  });
+  process.chdir(cwd);
+}
+
+function promoteDefaults(dir) {
+  versionsMap.forEach((versions, modName) => {
+    if (versions.length === 1) {
+      const vDir = Path.join(dir, modName, flatVDir, versions[0], modName);
+      if (Fs.existsSync(vDir)) {
+        console.log("Promoting module", modName, "to default");
+        const files = Fs.readdirSync(vDir).map((x) => Path.join(vDir, x));
+        shell.mv(files, Path.join(dir, modName));
+        const pkgFile = Path.join(dir, modName, "package.json");
+        const pkg = require(pkgFile);
+        pkg._flatVersion = versions[0];
+        Fs.writeFileSync(pkgFile, JSON.stringify(pkg, null, 2));
+        Fs.rmdirSync(vDir);
+        shell.rm("-rf", Path.join(dir, modName, flatVDir));
+      }
     }
   });
 }
@@ -209,4 +240,6 @@ captureAppDepResolutions();
 moveModulesToFlat();
 makeAppDepResolutions();
 makeDepDepResolutions();
-relinkBin(Path.resolve("node_modules"), require(Path.resolve("node_modules", "__dep_resolutions.json")));
+promoteDefaults(targetDir);
+relinkBin(targetDir, require(Path.resolve(targetDir, "__dep_resolutions.json")));
+shell.cp("-f", Path.join(__dirname, "../flat-module.js"), process.cwd());
