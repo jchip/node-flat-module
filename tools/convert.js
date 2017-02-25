@@ -45,7 +45,7 @@ function moveThisModule(dir) {
 
 /*
  * Recursively go down node_modules until there's no more
- * Then move the module to <root>/node_modules/__fv_/<mod_name>/</name><version> 
+ * Then move the module to <root>/node_modules/<mod_name>/__fv_/<version>/<mod_name>
  * if it doesn't exist else just delete it from disk
  *
  */
@@ -68,6 +68,9 @@ function moveModules(dir) {
 
 function resolveResolutions(depRes, pkg, section, deps) {
   if (!deps) {
+    return;
+  }
+  if (depRes[pkg.name]) {
     return;
   }
   Object.keys(deps).forEach((modName) => {
@@ -139,18 +142,14 @@ function captureAppDepResolutions() {
   const appDepResFile = Path.resolve(targetDir, "__dep_resolutions.json");
   if (Fs.existsSync(appDepResFile)) {
     appDepRes = require(appDepResFile);
-    Object.keys(appDepRes).forEach((m) => {
-      if (appDepRes[m].resolved.startsWith("v")) {
-        appDepRes[m].resolved = appDepRes[m].resolved.substr(1);
-      }
-    });
   }
   const topLevelModules = Fs.readdirSync(sourceDir).filter((x) => x !== ".bin");
   topLevelModules.forEach((m) => {
-    const mDir = Path.resolve(targetDir, m);
+    const mDir = Path.resolve(sourceDir, m);
     const pkgFile = Path.join(mDir, "package.json");
     if (Fs.existsSync(pkgFile)) {
       const pkg = require(pkgFile);
+      console.log("capture top module", pkg.name, "resolved version", pkg.version);
       appDepRes[pkg.name] = { resolved: pkg.version };
     }
   });
@@ -191,15 +190,17 @@ function relinkBin(dir, depRes) {
     const modName = splits[1];
     let res = depRes[modName];
 
-
-    console.log("link", link, "target", target, splits);
     let newSplits = splits.slice(2);
     const versions = versionsMap.get(modName);
-    if (versions.length > 1) {
-      const resolved = res ? res.resolved : versions[0];
-      newSplits.unshift("..", modName, flatVDir, resolved, modName);
-    } else {
+
+    /* has a resolved version that's been promoted to default or there's only a single version */
+    if (res || versions.length === 1) {
       newSplits.unshift("..", modName);
+    } else {
+      /* no resolved, then just link to first version */
+      /* this scenario should not be possible */
+      console.log("!!!!! No app resolved version captured for module", modName);
+      newSplits.unshift("..", modName, flatVDir, versions[0], modName);
     }
 
     const newTarget = Path.join.apply(Path, newSplits);
@@ -217,19 +218,32 @@ function relinkBin(dir, depRes) {
   process.chdir(cwd);
 }
 
+
 function promoteDefaults(dir) {
+  const promoteVersionToDefault = (version, modName) => {
+    const vDir = Path.join(dir, modName, flatVDir, version, modName);
+    if (Fs.existsSync(vDir)) {
+      console.log("Promoting module", modName + "@" + version, "to default");
+      const files = Fs.readdirSync(vDir).map((x) => Path.join(vDir, x));
+      shell.mv(files, Path.join(dir, modName));
+      const pkgFile = Path.join(dir, modName, "package.json");
+      const pkg = require(pkgFile);
+      pkg._flatVersion = version;
+      Fs.writeFileSync(pkgFile, JSON.stringify(pkg, null, 2));
+      Fs.rmdirSync(vDir);
+      Fs.rmdirSync(Path.join(vDir, ".."));
+      return true;
+    }
+    return false;
+  };
+
   versionsMap.forEach((versions, modName) => {
-    if (versions.length === 1) {
-      const vDir = Path.join(dir, modName, flatVDir, versions[0], modName);
-      if (Fs.existsSync(vDir)) {
-        console.log("Promoting module", modName, "to default");
-        const files = Fs.readdirSync(vDir).map((x) => Path.join(vDir, x));
-        shell.mv(files, Path.join(dir, modName));
-        const pkgFile = Path.join(dir, modName, "package.json");
-        const pkg = require(pkgFile);
-        pkg._flatVersion = versions[0];
-        Fs.writeFileSync(pkgFile, JSON.stringify(pkg, null, 2));
-        Fs.rmdirSync(vDir);
+    const res = appDepRes[modName];
+    /* promote the app resolved or latest version to default - expected versions sorted desc */
+    const promote = res ? res.resolved : versions[0];
+    if (promoteVersionToDefault(promote, modName)) {
+      /* only version has been promoted, no need to keep the __fv_ dir anymore */
+      if (versions.length === 1) {
         shell.rm("-rf", Path.join(dir, modName, flatVDir));
       }
     }
