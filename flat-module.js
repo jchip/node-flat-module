@@ -178,7 +178,8 @@ internals.findModuleName = (dir, request) => {
   const hasVersionsDir = (d) => fs.existsSync(path.join(d, versionsDir));
   const hasPkgJson = (d) => fs.existsSync(path.join(d, "package.json"));
 
-  for (let i = 0; i < splits.length; i++) {
+  let i;
+  for (i = 0; i < splits.length; i++) {
     dir = path.join(dir, splits[i]);
     if (hasVersionsDir(dir) || hasPkgJson(dir)) {
       request = splits.slice(0, i + 1).join("/");
@@ -243,7 +244,8 @@ internals.semVerMatch = (semVer, ver) => {
 
   const svSplits = semVer.split(".");
   const verSplits = ver.split(".");
-  for (let i = 0; i < verSplits.length; i++) {
+  let i;
+  for (i = 0; i < verSplits.length; i++) {
     if (i >= svSplits.length) {
       return true;
     } else if (!isAny(svSplits[i])) {
@@ -266,7 +268,8 @@ internals.semVerCompare = (a, b) => {
   if (mA && mB) {
     const aSp = mA[0].split(".");
     const bSp = mB[0].split(".");
-    for (let i = 0; i < aSp.length; i++) {
+    let i;
+    for (i = 0; i < aSp.length; i++) {
       const aN = parseInt(aSp[i], 10);
       const bN = parseInt(bSp[i], 10);
       if (aN > bN) {
