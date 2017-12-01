@@ -4,7 +4,7 @@ instrumentation:
     - .js
   default-excludes: true
   include-all-sources: true
-  excludes: [ "node-module.js", "tools/convert.js" ]
+  excludes: [ "node8-module.js", "node-module.js", "tools/convert.js" ]
 check:
   global:
     statements: 100

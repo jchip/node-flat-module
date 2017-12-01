@@ -311,9 +311,9 @@ internals.getModuleVersions = (modName, modDir) => {
   return versionsMap.get(modName);
 };
 
-function flatResolveLookupPaths(request, parent) {
+function flatResolveLookupPaths(request, parent, newReturn) {
   if (internals.useOriginalLookup(request)) {
-    return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent);
+    return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
   }
 
   const reqParts = internals.parseRequest(request);
@@ -356,12 +356,13 @@ function flatResolveLookupPaths(request, parent) {
   let flatFlag = flatFlagMap.get(topDir.dir);
 
   if (flatFlag === false) {
-    return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent);
+    return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
   }
 
   // If can't figure out topDir, then give up.
   if (!topDir.dir) {
-    return [request, []]; // force not found error out
+    /* istanbul ignore next */
+    return newReturn ? null : [request, []]; // force not found error out
   }
 
   //
@@ -466,9 +467,10 @@ function flatResolveLookupPaths(request, parent) {
   //
   if (!version) {
     if (flatFlag === false) {
-      return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent);
+      return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
     }
-    return [request, []]; // force not found error out
+    /* istanbul ignore next */
+    return newReturn ? null : [request, []]; // force not found error out
   }
 
   if (flatFlag === undefined) {
@@ -480,7 +482,8 @@ function flatResolveLookupPaths(request, parent) {
       ? path.join(topDir.dir, nodeModules)
       : path.join(moduleDir, versionsDir, version);
 
-  return [request, [versionFp]];
+  /* istanbul ignore next */
+  return newReturn ? [versionFp] : [request, [versionFp]];
 }
 
 function flatFindPath(request, paths, isMain) {
