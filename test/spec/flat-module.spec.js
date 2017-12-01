@@ -15,8 +15,13 @@ function linkModule(name, app, options) {
   options = options || {};
   const fixtures = Path.join(__dirname, "..", "fixtures");
   const modLoc = Path.join(fixtures, name);
-  const modLinkVersion = "symlink_" + Crypto.createHash("md5").update(modLoc)
-    .digest("base64").replace(/[+/]/g, (m) => m === "+" ? "-" : "_").substr(0, 22);
+  const modLinkVersion =
+    "symlink_" +
+    Crypto.createHash("md5")
+      .update(modLoc)
+      .digest("base64")
+      .replace(/[+/]/g, m => (m === "+" ? "-" : "_"))
+      .substr(0, 22);
   const appDir = Path.join(fixtures, app);
   const appNmMod = Path.join(appDir, "node_modules", name);
   const modLinkVersionDir = Path.join(appNmMod, versionsDir, modLinkVersion);
@@ -27,23 +32,37 @@ function linkModule(name, app, options) {
   }
   if (!options.noTarget) {
     const linkedFile = Path.join(modLinkVersionDir, "__linked_target.json");
-    Fs.writeFileSync(linkedFile, JSON.stringify({
-      target: modLoc,
-      appDir,
-      resolved: modLinkVersion
-    }, null, 2) + "\n");
+    Fs.writeFileSync(
+      linkedFile,
+      JSON.stringify(
+        {
+          target: modLoc,
+          appDir,
+          resolved: modLinkVersion
+        },
+        null,
+        2
+      ) + "\n"
+    );
   }
   if (!options.noFrom) {
     const modLinkFrom = Path.join(modLoc, "node_modules", "__linked_from.json");
-    Fs.writeFileSync(modLinkFrom, JSON.stringify({
-      [appDir]: {
-        _depResolutions: {
-          foo: {
-            resolved: "2.0.1"
+    Fs.writeFileSync(
+      modLinkFrom,
+      JSON.stringify(
+        {
+          [appDir]: {
+            _depResolutions: {
+              foo: {
+                resolved: "2.0.1"
+              }
+            }
           }
-        }
-      }
-    }, null, 2) + "\n");
+        },
+        null,
+        2
+      ) + "\n"
+    );
   }
   const depResFile = Path.join(appDir, "node_modules", "__dep_resolutions.json");
   const depRes = require(depResFile);
@@ -52,8 +71,7 @@ function linkModule(name, app, options) {
   Fs.writeFileSync(depResFile, JSON.stringify(depRes, null, 2) + "\n");
 }
 
-
-describe("flat-module", function () {
+describe("flat-module", function() {
   let flatModule;
   let saveCwd = process.cwd();
   let appCwd;
@@ -142,7 +160,6 @@ describe("flat-module", function () {
     expect(x.foo.version).to.equal("5.10.7");
   });
 
-
   it("should load default version w/o __fv_", () => {
     const x = requireAt(Path.join(__dirname, "../fixtures/app"), "default-none");
     expect(x.name).to.equal("default-none");
@@ -151,7 +168,9 @@ describe("flat-module", function () {
   });
 
   it("should fail to load specific version of module with only default version", () => {
-    expect(() => requireAt(Path.join(__dirname, "../fixtures/app"), "default-none@3.5.9")).to.throw();
+    expect(() =>
+      requireAt(Path.join(__dirname, "../fixtures/app"), "default-none@3.5.9")
+    ).to.throw();
   });
 
   it("should load module with only default version even if resolved to a diff version", () => {
@@ -184,7 +203,7 @@ describe("flat-module", function () {
     expect(require(Path.resolve("tests/test_noflat"))).to.deep.equal({
       foo: {
         name: "foo",
-        version: "1.1.0",
+        version: "1.1.0"
       },
       qqq1: { qqq1: 1000 },
       qqq2: { qqq2: 1000 }
@@ -217,47 +236,57 @@ describe("flat-module", function () {
     process.chdir(__dirname);
     const requireAtApp = requireAt(Path.resolve("../fixtures/another-app"));
     const foo = requireAtApp.resolve("foo");
-    expect(foo).to.include(`test/fixtures/another-app/node_modules/foo/${versionsDir}/9.10.5/foo/index.js`);
+    expect(foo).to.include(
+      `test/fixtures/another-app/node_modules/foo/${versionsDir}/9.10.5/foo/index.js`
+    );
   });
 
-  describe("when in node repl", function () {
+  describe("when in node repl", function() {
     it("should return proper paths when parent.filename is null (repl)", () => {
       const parent = {
-        "id": "<repl>",
-        "exports": {},
-        "filename": null,
-        "loaded": false,
-        "children": [],
-        "paths": []
+        id: "<repl>",
+        exports: {},
+        filename: null,
+        loaded: false,
+        children: [],
+        paths: []
       };
-      expect(flatModule.flatResolveLookupPaths("foo", parent)).to.deep.equal(["foo",
-        [Path.resolve(`node_modules/foo/${versionsDir}/1.1.0`)]]);
+      expect(flatModule.flatResolveLookupPaths("foo", parent)).to.deep.equal([
+        "foo",
+        [Path.resolve(`node_modules/foo/${versionsDir}/1.1.0`)]
+      ]);
     });
 
     it("should load module with CWD below dir of node_modules (repl)", () => {
       const parent = {
-        "id": "<repl>",
-        "exports": {},
-        "filename": null,
-        "loaded": false,
-        "children": [],
-        "paths": []
+        id: "<repl>",
+        exports: {},
+        filename: null,
+        loaded: false,
+        children: [],
+        paths: []
       };
       process.chdir("lib/lib2");
-      expect(flatModule.flatResolveLookupPaths("foo", parent)).to.deep.equal(
-        ["foo", [Path.resolve(`../../node_modules/foo/${versionsDir}/1.1.0`)]]
-      );
+      expect(flatModule.flatResolveLookupPaths("foo", parent)).to.deep.equal([
+        "foo",
+        [Path.resolve(`../../node_modules/foo/${versionsDir}/1.1.0`)]
+      ]);
     });
   });
 
-  describe("flat-module internals", function () {
-
-    describe("findNearestPackage", function () {
+  describe("flat-module internals", function() {
+    describe("findNearestPackage", function() {
       it("should stop at stopDir", () => {
         const dir = Path.normalize("/tmp/flat-test/pkg1/pkg-stop/pkg2/pkg3");
         mkdirp.sync(dir);
-        Fs.writeFileSync(Path.normalize("/tmp/flat-test/pkg1/package.json"), JSON.stringify({ hello: 1 }));
-        const pkg = flatModule.internals.findNearestPackage(dir, Path.normalize("/tmp/flat-test/pkg1/pkg-stop"));
+        Fs.writeFileSync(
+          Path.normalize("/tmp/flat-test/pkg1/package.json"),
+          JSON.stringify({ hello: 1 })
+        );
+        const pkg = flatModule.internals.findNearestPackage(
+          dir,
+          Path.normalize("/tmp/flat-test/pkg1/pkg-stop")
+        );
         expect(pkg).to.be.undefined;
       });
 
@@ -269,7 +298,7 @@ describe("flat-module", function () {
       });
     });
 
-    describe("isRelativePathRequest", function () {
+    describe("isRelativePathRequest", function() {
       it("should return true for .", () => {
         expect(flatModule.internals.isRelativePathRequest(".")).to.be.true;
       });
@@ -305,11 +334,13 @@ describe("flat-module", function () {
       });
     });
 
-    describe("semVerMatch", function () {
+    describe("semVerMatch", function() {
       const testMatch = (r, sv, vers) => {
-        vers.forEach(
-          (v) => chai.assert(flatModule.internals.semVerMatch(sv, v) === r,
-            `Expect version ${v} to ${!r && "not" || ""} match semver ${sv}`)
+        vers.forEach(v =>
+          chai.assert(
+            flatModule.internals.semVerMatch(sv, v) === r,
+            `Expect version ${v} to ${(!r && "not") || ""} match semver ${sv}`
+          )
         );
       };
 
@@ -323,29 +354,29 @@ describe("flat-module", function () {
       it("should match 3/3. for major v3", () => {
         const v3 = ["3", "3.", "3.1", "3.10.", "3.9.12"];
         const v3sv = ["3", "3."];
-        v3sv.forEach((sv) => {
-          testMatch(true, sv, v3)
+        v3sv.forEach(sv => {
+          testMatch(true, sv, v3);
         });
       });
 
       it("should match 3.x/3.x./3.x.x for major v3", () => {
         const v3 = ["3", "3.", "3.1", "3.10.", "3.9.12"];
         const v3sv = ["3.x", "3.x.", "3.x.x", "3.*", "3.*.", "3.X.*", "3.x.X", "3.x.*"];
-        v3sv.forEach((sv) => {
-          testMatch(true, sv, v3)
+        v3sv.forEach(sv => {
+          testMatch(true, sv, v3);
         });
       });
 
       it("should not match 3 for non major v3", () => {
         const nonV3 = ["1.3", "2.3.", "2.3.x", "2.", "2.x.x", ".3", ".x.3", "0.x.3", "0.0.3"];
-        ["3", "3.", "3.X", "3.x.X", "3.X.*"].forEach((sv) => {
+        ["3", "3.", "3.X", "3.x.X", "3.X.*"].forEach(sv => {
           testMatch(false, sv, nonV3);
         });
       });
 
       it("should match exact sv", () => {
         const vers = ["0", "0.0", "0.1", "0.1.3", "1.2.3", "3.2", "1.2", "2", "2.3.3"];
-        vers.forEach((v) => testMatch(true, v, [v]));
+        vers.forEach(v => testMatch(true, v, [v]));
       });
 
       it("should match 2.x.5 for any minor", () => {
@@ -359,7 +390,7 @@ describe("flat-module", function () {
       });
     });
 
-    describe("semVerCompare", function () {
+    describe("semVerCompare", function() {
       it("should return 0 for same values", () => {
         expect(flatModule.internals.semVerCompare("12345", "12345")).to.equal(0);
       });
@@ -374,7 +405,6 @@ describe("flat-module", function () {
         expect(flatModule.internals.semVerCompare("hello.world", "foo.bar")).to.equal(1);
         expect(flatModule.internals.semVerCompare("foo.bar", "hello.world")).to.equal(-1);
       });
-    })
-
+    });
   });
 });

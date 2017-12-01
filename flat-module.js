@@ -1,4 +1,4 @@
-'use strict';
+"use strict";
 
 const Module = require("module");
 const fs = require("fs");
@@ -36,11 +36,10 @@ function pathIsInside(thePath, potentialParent) {
     potentialParent = potentialParent.toLowerCase();
   }
 
-  return thePath.lastIndexOf(potentialParent, 0) === 0 &&
-    (
-      thePath[potentialParent.length] === path.sep ||
-      thePath[potentialParent.length] === undefined
-    );
+  return (
+    thePath.lastIndexOf(potentialParent, 0) === 0 &&
+    (thePath[potentialParent.length] === path.sep || thePath[potentialParent.length] === undefined)
+  );
 }
 
 function stripTrailingSep(thePath) {
@@ -53,7 +52,7 @@ function stripTrailingSep(thePath) {
 
 // ^^^ https://github.com/domenic/path-is-inside/blob/master/lib/path-is-inside.js
 
-internals.getLinkedInfo = (nmDir) => {
+internals.getLinkedInfo = nmDir => {
   const linkedF = path.join(nmDir, "__linked_from.json");
   if (fs.existsSync(linkedF)) {
     const linked = JSON.parse(fs.readFileSync(linkedF));
@@ -115,7 +114,7 @@ internals.getLinkedInfo = (nmDir) => {
 // search from originDir up to CWD or / looking for the first node_modules
 // and use that as topDir
 //
-internals.searchTopDir = (originDir) => {
+internals.searchTopDir = originDir => {
   let dir;
   let up = originDir;
   let linkedInfo;
@@ -154,8 +153,7 @@ internals.findNearestPackage = (dir, stopDir, singleStops) => {
     if (fs.existsSync(pkgFile)) {
       return require(pkgFile);
     }
-    if (dir === stopDir ||
-      (singleStops && singleStops.indexOf(path.basename(dir)) >= 0)) {
+    if (dir === stopDir || (singleStops && singleStops.indexOf(path.basename(dir)) >= 0)) {
       break;
     }
     up = path.join(dir, "..");
@@ -175,8 +173,8 @@ internals.findModuleName = (dir, request) => {
   }
   dir = path.join(dir, nodeModules);
 
-  const hasVersionsDir = (d) => fs.existsSync(path.join(d, versionsDir));
-  const hasPkgJson = (d) => fs.existsSync(path.join(d, "package.json"));
+  const hasVersionsDir = d => fs.existsSync(path.join(d, versionsDir));
+  const hasPkgJson = d => fs.existsSync(path.join(d, "package.json"));
 
   let i;
   for (i = 0; i < splits.length; i++) {
@@ -189,7 +187,7 @@ internals.findModuleName = (dir, request) => {
   return request;
 };
 
-internals.isRelativePathRequest = (request) => {
+internals.isRelativePathRequest = request => {
   if (request === "." || request === "..") {
     return true;
   }
@@ -206,11 +204,11 @@ internals.isRelativePathRequest = (request) => {
   return false;
 };
 
-internals.useOriginalLookup = (request) => {
+internals.useOriginalLookup = request => {
   return path.isAbsolute(request) || internals.isRelativePathRequest(request);
 };
 
-internals.parseRequest = (request) => {
+internals.parseRequest = request => {
   let semVer = "";
   const xAt = request.indexOf("@");
   if (xAt > 0) {
@@ -226,15 +224,15 @@ internals.parseRequest = (request) => {
     }
     request = tmp + tail;
   }
-  return { request, semVer }
+  return { request, semVer };
 };
 
 // from https://github.com/sindresorhus/semver-regex/blob/master/index.js
-const semVerRegex = /\bv?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[\da-z\-]+(?:\.[\da-z\-]+)*)?(?:\+[\da-z\-]+(?:\.[\da-z\-]+)*)?\b/ig;
+const semVerRegex = /\bv?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[\da-z\-]+(?:\.[\da-z\-]+)*)?(?:\+[\da-z\-]+(?:\.[\da-z\-]+)*)?\b/gi;
 
 internals.semVerMatch = (semVer, ver) => {
   // support x.x.x format ONLY
-  const isAny = (v) => {
+  const isAny = v => {
     return !v || (v === "x" || v === "X" || v === "*");
   };
 
@@ -303,7 +301,7 @@ internals.getModuleVersions = (modName, modDir) => {
       versions.default = pkg._flatVersion;
     }
 
-    versions.all = versions.all.sort(internals.semVerCompare)
+    versions.all = versions.all.sort(internals.semVerCompare);
     versionsMap.set(modName, versions);
   }
 
@@ -322,7 +320,7 @@ function flatResolveLookupPaths(request, parent) {
 
   const cwd = process.cwd();
 
-  const findTopDir = (originDir) => {
+  const findTopDir = originDir => {
     // if parentDir is under CWD, look for node_modules
     if (pathIsInside(originDir, cwd)) {
       if (fs.existsSync(path.join(originDir, nodeModules))) {
@@ -339,7 +337,7 @@ function flatResolveLookupPaths(request, parent) {
     return internals.searchTopDir(originDir);
   };
 
-  const getTopDir = (originDir) => {
+  const getTopDir = originDir => {
     if (topDirMap.has(originDir)) {
       return topDirMap.get(originDir);
     } else {
@@ -419,8 +417,10 @@ function flatResolveLookupPaths(request, parent) {
       //
       // can't find _depResolutions, fallback to original node module resolution.
       //
-      assert(flatFlag === undefined,
-        "flat module can't determine dep resolution but flat mode is already " + flatFlag);
+      assert(
+        flatFlag === undefined,
+        "flat module can't determine dep resolution but flat mode is already " + flatFlag
+      );
       flatFlag = false;
       flatFlagMap.set(topDir.dir, flatFlag);
       return {};
@@ -430,11 +430,11 @@ function flatResolveLookupPaths(request, parent) {
   };
 
   const matchLatestSemVer = (semVer, versions) => {
-    const matched = versions.all.filter((v) => internals.semVerMatch(semVer, v));
+    const matched = versions.all.filter(v => internals.semVerMatch(semVer, v));
     return matched.length > 0 && matched[matched.length - 1];
   };
 
-  const getResolvedVersion = (versions) => {
+  const getResolvedVersion = versions => {
     const depRes = getDepResolutions(topDir, pkg);
     const r = depRes[moduleName];
     if (!r || versions.all.indexOf(r.resolved) < 0) {
@@ -472,9 +472,10 @@ function flatResolveLookupPaths(request, parent) {
     flatFlagMap.set(topDir.dir, true);
   }
 
-  const versionFp = version === versions.default
-    ? path.join(topDir.dir, nodeModules)
-    : path.join(moduleDir, versionsDir, version);
+  const versionFp =
+    version === versions.default
+      ? path.join(topDir.dir, nodeModules)
+      : path.join(moduleDir, versionsDir, version);
 
   return [request, [versionFp]];
 }
@@ -494,7 +495,7 @@ module.exports = {
   flatResolveLookupPaths,
   restore: () => {
     Module._resolveLookupPaths = Module._flat_orig_resolveLookupPaths;
-    delete Module._flat_orig_resolveLookupPaths
+    delete Module._flat_orig_resolveLookupPaths;
   },
   internals
 };

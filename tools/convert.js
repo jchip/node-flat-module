@@ -38,7 +38,9 @@ function moveThisModule(dir) {
     }
     console.log(`copying ${dir} to ${targetNmDir}`);
     shell.mkdir("-p", targetNmDir);
-    const files = Fs.readdirSync(Path.join(dir)).filter((x) => x !== "node_modules").map((x) => Path.join(dir, x));
+    const files = Fs.readdirSync(Path.join(dir))
+      .filter(x => x !== "node_modules")
+      .map(x => Path.join(dir, x));
     shell.cp("-Rf", files, targetNmDir);
   }
 }
@@ -59,8 +61,8 @@ function moveModules(dir) {
   if (Fs.existsSync(pkgFile)) {
     moveThisModule(dir);
   } else {
-    const modules = Fs.readdirSync(dir).filter((x) => x !== ".bin");
-    modules.forEach((m) => {
+    const modules = Fs.readdirSync(dir).filter(x => x !== ".bin");
+    modules.forEach(m => {
       moveModules(Path.join(dir, m));
     });
   }
@@ -73,14 +75,14 @@ function resolveResolutions(depRes, pkg, section, deps) {
   if (depRes[pkg.name]) {
     return;
   }
-  Object.keys(deps).forEach((modName) => {
+  Object.keys(deps).forEach(modName => {
     if (!versionsMap.has(modName)) {
       console.log("Unable to find versions for", modName, "in section", section);
       return;
     }
     const sv = deps[modName];
     const versions = versionsMap.get(modName);
-    let resolved = versions.find((v) => semver.satisfies(v, sv));
+    let resolved = versions.find(v => semver.satisfies(v, sv));
     if (!resolved) {
       console.log(pkg.name, "can't find resolved for", modName, "using latest");
       resolved = versions[0];
@@ -104,7 +106,7 @@ function makeDepResolutions(pkg, dev, depRes) {
 }
 
 function sortVersionMaps() {
-  versionsMap.forEach((v) => {
+  versionsMap.forEach(v => {
     semverSort.desc(v);
   });
 }
@@ -113,8 +115,8 @@ function readVersions() {
   if (!Fs.existsSync(targetDir)) {
     return;
   }
-  const modules = Fs.readdirSync(targetDir).filter((x) => x !== ".bin" && !x.startsWith("__dep"));
-  modules.forEach((m) => {
+  const modules = Fs.readdirSync(targetDir).filter(x => x !== ".bin" && !x.startsWith("__dep"));
+  modules.forEach(m => {
     const vDir = Path.resolve(targetDir, m, flatVDir);
     if (Fs.existsSync(vDir)) {
       versionsMap.set(m, Fs.readdirSync(vDir));
@@ -125,7 +127,6 @@ function readVersions() {
 }
 
 function moveModulesToFlat() {
-
   if (Fs.existsSync(Path.resolve(targetDir, "__dep_resolutions.json"))) {
     console.log("already flat");
     readVersions();
@@ -143,8 +144,8 @@ function captureAppDepResolutions() {
   if (Fs.existsSync(appDepResFile)) {
     appDepRes = require(appDepResFile);
   }
-  const topLevelModules = Fs.readdirSync(sourceDir).filter((x) => x !== ".bin");
-  topLevelModules.forEach((m) => {
+  const topLevelModules = Fs.readdirSync(sourceDir).filter(x => x !== ".bin");
+  topLevelModules.forEach(m => {
     const mDir = Path.resolve(sourceDir, m);
     const pkgFile = Path.join(mDir, "package.json");
     if (Fs.existsSync(pkgFile)) {
@@ -158,13 +159,16 @@ function captureAppDepResolutions() {
 function makeAppDepResolutions() {
   const appPkg = require(Path.resolve("package.json"));
   const appRes = makeDepResolutions(appPkg, true, appDepRes);
-  Fs.writeFileSync(Path.resolve(targetDir, "__dep_resolutions.json"), JSON.stringify(appRes, null, 2));
+  Fs.writeFileSync(
+    Path.resolve(targetDir, "__dep_resolutions.json"),
+    JSON.stringify(appRes, null, 2)
+  );
 }
 
 function makeDepDepResolutions() {
-  const modules = Fs.readdirSync(targetDir).filter((x) => x !== ".bin" && !x.startsWith("__dep"));
-  modules.forEach((m) => {
-    versionsMap.get(m).forEach((v) => {
+  const modules = Fs.readdirSync(targetDir).filter(x => x !== ".bin" && !x.startsWith("__dep"));
+  modules.forEach(m => {
+    versionsMap.get(m).forEach(v => {
       const mDir = Path.resolve(targetDir, m, flatVDir, v, m);
       if (Fs.existsSync(mDir)) {
         const pkgFile = Path.join(mDir, "package.json");
@@ -183,7 +187,7 @@ function relinkBin(dir, depRes) {
   const links = Fs.readdirSync(binDir);
   const cwd = process.cwd();
   process.chdir(targetBinDir);
-  links.forEach((link) => {
+  links.forEach(link => {
     const linkFp = Path.join(binDir, link);
     const target = Fs.readlinkSync(linkFp);
     const splits = target.split("/");
@@ -218,13 +222,12 @@ function relinkBin(dir, depRes) {
   process.chdir(cwd);
 }
 
-
 function promoteDefaults(dir) {
   const promoteVersionToDefault = (version, modName) => {
     const vDir = Path.join(dir, modName, flatVDir, version, modName);
     if (Fs.existsSync(vDir)) {
       console.log("Promoting module", modName + "@" + version, "to default");
-      const files = Fs.readdirSync(vDir).map((x) => Path.join(vDir, x));
+      const files = Fs.readdirSync(vDir).map(x => Path.join(vDir, x));
       shell.mv(files, Path.join(dir, modName));
       const pkgFile = Path.join(dir, modName, "package.json");
       const pkg = require(pkgFile);
