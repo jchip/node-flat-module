@@ -5,10 +5,13 @@ const fs = require("fs");
 const assert = require("assert");
 const path = require("path");
 
-assert(!Module._flat_orig_resolveLookupPaths, "Flat Module system already installed");
+const ORIG_RESOLVE_LOOKUP_PATHS = Symbol("ORIG_RESOLVE_LOOKUP_PATHS");
+const ORIG_FIND_PATH = Symbol("ORIG_FIND_PATH");
 
-Module._flat_orig_resolveLookupPaths = Module._resolveLookupPaths;
-Module._flat_orig_findPath = Module._findPath;
+assert(!Module[ORIG_RESOLVE_LOOKUP_PATHS], "Flat Module system already installed");
+
+Module[ORIG_RESOLVE_LOOKUP_PATHS] = Module._resolveLookupPaths;
+Module[ORIG_FIND_PATH] = Module._findPath;
 
 const linkedMap = new Map();
 const topDirMap = new Map();
@@ -310,7 +313,7 @@ internals.getModuleVersions = (modName, modDir) => {
 
 function flatResolveLookupPaths(request, parent) {
   if (internals.useOriginalLookup(request)) {
-    return this._flat_orig_resolveLookupPaths(request, parent);
+    return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent);
   }
 
   const reqParts = internals.parseRequest(request);
@@ -353,7 +356,7 @@ function flatResolveLookupPaths(request, parent) {
   let flatFlag = flatFlagMap.get(topDir.dir);
 
   if (flatFlag === false) {
-    return this._flat_orig_resolveLookupPaths(request, parent);
+    return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent);
   }
 
   // If can't figure out topDir, then give up.
@@ -463,7 +466,7 @@ function flatResolveLookupPaths(request, parent) {
   //
   if (!version) {
     if (flatFlag === false) {
-      return this._flat_orig_resolveLookupPaths(request, parent);
+      return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent);
     }
     return [request, []]; // force not found error out
   }
@@ -485,7 +488,7 @@ function flatFindPath(request, paths, isMain) {
     request = internals.parseRequest(request).request;
   }
 
-  return this._flat_orig_findPath(request, paths, isMain);
+  return this[ORIG_FIND_PATH](request, paths, isMain);
 }
 
 Module._resolveLookupPaths = flatResolveLookupPaths;
@@ -494,8 +497,10 @@ Module._findPath = flatFindPath;
 module.exports = {
   flatResolveLookupPaths,
   restore: () => {
-    Module._resolveLookupPaths = Module._flat_orig_resolveLookupPaths;
-    delete Module._flat_orig_resolveLookupPaths;
+    Module._resolveLookupPaths = Module[ORIG_RESOLVE_LOOKUP_PATHS];
+    Module._findPath = Module[ORIG_FIND_PATH];
+    Module[ORIG_RESOLVE_LOOKUP_PATHS] = undefined;
+    Module[ORIG_FIND_PATH] = undefined;
   },
   internals
 };
