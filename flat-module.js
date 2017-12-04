@@ -17,6 +17,7 @@ const linkedMap = new Map();
 const topDirMap = new Map();
 const flatFlagMap = new Map();
 const versionsMap = new Map();
+const pkgDataMap = new Map();
 const versionsDir = "__fv_";
 
 const debug = Module._debug;
@@ -114,19 +115,45 @@ internals.getLinkedInfo = nmDir => {
 //
 
 //
+// search from <dir> up to <stopDir> or /, or checkCb returns non-undefined
+//
+internals.searchUpDir = (dir, stopDir, singleStops, checkCb) => {
+  let up = dir;
+  while (up) {
+    dir = up;
+    const result = checkCb(dir);
+    if (result !== undefined) return result;
+
+    if (
+      (stopDir && dir === stopDir) ||
+      (singleStops && singleStops.indexOf(path.basename(dir)) >= 0)
+    ) {
+      break;
+    }
+
+    up = path.join(dir, "..");
+    if (dir === up) {
+      break;
+    }
+  }
+
+  return false;
+};
+
+//
 // search from originDir up to CWD or / looking for the first node_modules
 // and use that as topDir
 //
 internals.searchTopDir = originDir => {
   let dir;
-  let up = originDir;
   let linkedInfo;
+
   const cwd = process.cwd();
-  while (up) {
-    originDir = up;
-    const nmDir = path.join(originDir, nodeModules);
+
+  internals.searchUpDir(originDir, null, null, x => {
+    const nmDir = path.join(x, nodeModules);
     if (fs.existsSync(nmDir)) {
-      dir = originDir; // yay, found node_modules
+      dir = x; // yay, found node_modules
       // but is it a linked module?
       const cacheKey = cwd + ":" + nmDir;
       if (!linkedMap.has(cacheKey)) {
@@ -136,34 +163,54 @@ internals.searchTopDir = originDir => {
       if (linkedInfo) {
         dir = cwd; // switch to looking in CWD for linked mod
       }
-      break;
+      return true;
     }
-    up = path.join(originDir, "..");
-    if (originDir === up) {
-      break;
-    }
-  }
+    return undefined;
+  });
 
   return { dir, linkedInfo };
 };
 
+internals.readJSON = f => {
+  return JSON.parse(fs.readFileSync(f));
+};
+
+internals.readPackage = dir => {
+  if (pkgDataMap.has(dir)) return pkgDataMap.get(dir);
+  const pkgFile = path.join(dir, packageJson);
+  if (!fs.existsSync(pkgFile)) return false;
+
+  const pkg = internals.readJSON(pkgFile);
+
+  const x = {
+    name: pkg.name,
+    version: pkg.version,
+    dependencies: pkg.dependencies,
+    bundledDependencies: pkg.bundledDependencies || pkg.bundleDependencies,
+    _flatVersion: pkg._flatVersion,
+    _depResolutions: pkg._depResolutions
+  };
+
+  pkgDataMap.set(dir, x);
+
+  return x;
+};
+
+internals.findMappedPackage = (dir, stopDir, singleStops) => {
+  return internals.searchUpDir(dir, stopDir, singleStops, x => {
+    return pkgDataMap.has(dir) ? pkgDataMap.get(dir) : undefined;
+  });
+};
+
 // search from <dir> up to <stopDir> or / for the file package.json
 internals.findNearestPackage = (dir, stopDir, singleStops) => {
-  let up = dir;
-  while (up) {
-    dir = up;
-    const pkgFile = path.join(dir, packageJson);
-    if (fs.existsSync(pkgFile)) {
-      return require(pkgFile);
-    }
-    if (dir === stopDir || (singleStops && singleStops.indexOf(path.basename(dir)) >= 0)) {
-      break;
-    }
-    up = path.join(dir, "..");
-    if (dir === up) {
-      break;
-    }
-  }
+  const mappedPkg = internals.findMappedPackage(dir, stopDir, singleStops);
+  if (mappedPkg) return mappedPkg;
+
+  return internals.searchUpDir(dir, stopDir, singleStops, x => {
+    const pkg = internals.readPackage(x);
+    return pkg || undefined;
+  });
 };
 
 //
@@ -207,8 +254,12 @@ internals.isRelativePathRequest = request => {
   return false;
 };
 
-internals.useOriginalLookup = request => {
-  return path.isAbsolute(request) || internals.isRelativePathRequest(request);
+internals.useOriginalLookup = (request, parent) => {
+  if (request === "<repl>") return true;
+  if (path.isAbsolute(request) || internals.isRelativePathRequest(request)) return true;
+  // if origin contains two or more node_modules then let original module system handle it
+  const x = (parent && parent.filename && parent.filename.indexOf(nodeModules)) || -1;
+  return x >= 0 && parent.filename.indexOf(nodeModules, x + 1) > x;
 };
 
 internals.parseRequest = request => {
@@ -287,6 +338,8 @@ internals.semVerCompare = (a, b) => {
 };
 
 internals.getModuleVersions = (modName, modDir) => {
+  debug("getModuleVersions", modName, modDir);
+
   if (!versionsMap.has(modDir) && fs.existsSync(modDir)) {
     const vDir = path.join(modDir, versionsDir);
     let versions = { all: !fs.existsSync(vDir) ? [] : fs.readdirSync(vDir) };
@@ -294,9 +347,8 @@ internals.getModuleVersions = (modName, modDir) => {
     //
     // does there exist a default version
     //
-    const pkgFile = path.join(modDir, "package.json");
-    if (fs.existsSync(pkgFile)) {
-      const pkg = require(pkgFile);
+    const pkg = internals.readPackage(modDir);
+    if (pkg) {
       if (versions.all.indexOf(pkg._flatVersion) < 0) {
         versions.all.push(pkg._flatVersion);
       }
@@ -311,8 +363,10 @@ internals.getModuleVersions = (modName, modDir) => {
   return versionsMap.get(modName);
 };
 
+const _PACKAGE = Symbol("_package");
+
 function flatResolveLookupPaths(request, parent, newReturn) {
-  if (internals.useOriginalLookup(request)) {
+  if (internals.useOriginalLookup(request, parent)) {
     return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
   }
 
@@ -326,23 +380,29 @@ function flatResolveLookupPaths(request, parent, newReturn) {
   const findTopDir = originDir => {
     // if parentDir is under CWD, look for node_modules
     if (pathIsInside(originDir, cwd)) {
+      // If there is node_modules right where request originated, then use it as topDir
       if (fs.existsSync(path.join(originDir, nodeModules))) {
         return { dir: originDir };
       } else {
+        // TODO: check win32 if it's `\node_modules` or `/node_modules`
+        // If the dir itself already has `/node_modules` then take the dir
+        // one level up from where that occurred as topDir
         const nmIndex = originDir.lastIndexOf(path.sep + nodeModules);
         if (nmIndex >= 0) {
           return { dir: path.join(originDir.substr(0, nmIndex + nodeModules.length + 1), "..") };
         }
       }
     }
-    // can't use CWD as topDir?
-    // search up for node_modules
+
+    // can't figure out topDir quickly, so have do dir search up for node_modules
     return internals.searchTopDir(originDir);
   };
 
   const getTopDir = originDir => {
     if (topDirMap.has(originDir)) {
-      return topDirMap.get(originDir);
+      const d = topDirMap.get(originDir);
+      debug("got topDir from map", d, originDir);
+      return d;
     } else {
       const td = findTopDir(originDir);
       topDirMap.set(originDir, td);
@@ -372,7 +432,7 @@ function flatResolveLookupPaths(request, parent, newReturn) {
 
   const moduleName = internals.findModuleName(topDir.dir, request);
 
-  let pkg = parent._package;
+  let pkg = parent[_PACKAGE];
 
   if (!pkg) {
     //
@@ -383,8 +443,17 @@ function flatResolveLookupPaths(request, parent, newReturn) {
     //
     pkg = internals.findNearestPackage(originDir, topDir.dir, [nodeModules]);
     if (pkg) {
-      parent._package = pkg;
+      parent[_PACKAGE] = pkg;
     }
+  }
+
+  //
+  // Pkg has bundledDependencies: use original module system
+  //
+  if (pkg && pkg.bundledDependencies && pkg.bundledDependencies.indexOf(request) >= 0) {
+    debug("has bundledDependencies", originDir, topDir.dir);
+    flatFlagMap.set(topDir.dir, false);
+    return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
   }
 
   // lookup specific version mapped for parent inside its nearest package.json
@@ -400,10 +469,16 @@ function flatResolveLookupPaths(request, parent, newReturn) {
     if (pkg._depResolutions) {
       return pkg._depResolutions;
     }
+
+    if (pkg._topDepRes) {
+      return pkg._topDepRes;
+    }
+
     //
     // package.json doesn't have _depResolutions entry
     // is it linked module? Then look inside linked info
     //
+
     const linkedInfo = topDir.linkedInfo;
     if (linkedInfo && linkedInfo._depResolutions) {
       pkg._depResolutions = linkedInfo._depResolutions;
@@ -411,30 +486,34 @@ function flatResolveLookupPaths(request, parent, newReturn) {
       return linkedInfo._depResolutions;
     }
 
-    //
-    // is it topDir/package.json? Then look for topDir/node_modules/__dep_resolutions.json
-    //
-    const ff = path.join(topDir.dir, nodeModules, "__dep_resolutions.json");
-    if (fs.existsSync(ff)) {
-      pkg._depResolutions = require(ff);
+    if (topDir.depRes) {
+      return (pkg._topDepRes = topDir.depRes);
     } else {
       //
-      // can't find _depResolutions, fallback to original node module resolution.
+      // is it topDir/package.json? Then look for topDir/node_modules/__dep_resolutions.json
       //
-      assert(
-        flatFlag === undefined,
-        "flat module can't determine dep resolution but flat mode is already " + flatFlag
-      );
-      flatFlag = false;
-      flatFlagMap.set(topDir.dir, flatFlag);
-      return {};
+      const ff = path.join(topDir.dir, nodeModules, "__dep_resolutions.json");
+      if (fs.existsSync(ff)) {
+        return (topDir.depRes = pkg._topDepRes = internals.readJSON(ff));
+      }
     }
 
-    return pkg._depResolutions;
+    //
+    // can't find _depResolutions, fallback to original node module resolution.
+    //
+    assert(
+      flatFlag === undefined,
+      `${request} flat module can't determine dep resolution but flat mode is already ${flatFlag}`
+    );
+    flatFlag = false;
+    flatFlagMap.set(topDir.dir, flatFlag);
+
+    return {};
   };
 
   const matchLatestSemVer = (semVer, versions) => {
     const matched = versions.all.filter(v => internals.semVerMatch(semVer, v));
+    debug("matched latest", matched, "for", semVer);
     return matched.length > 0 && matched[matched.length - 1];
   };
 
@@ -458,6 +537,7 @@ function flatResolveLookupPaths(request, parent, newReturn) {
 
   const moduleDir = path.join(topDir.dir, nodeModules, moduleName);
   const versions = internals.getModuleVersions(moduleName, moduleDir);
+  debug("versions", versions, reqParts);
   const version = reqParts.semVer
     ? matchLatestSemVer(reqParts.semVer, versions)
     : getResolvedVersion(versions);
@@ -481,6 +561,8 @@ function flatResolveLookupPaths(request, parent, newReturn) {
     version === versions.default
       ? path.join(topDir.dir, nodeModules)
       : path.join(moduleDir, versionsDir, version);
+
+  debug("versionFp", versionFp);
 
   /* istanbul ignore next */
   return newReturn ? [versionFp] : [request, [versionFp]];

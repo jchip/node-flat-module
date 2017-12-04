@@ -287,14 +287,14 @@ describe("flat-module", function() {
           dir,
           Path.normalize("/tmp/flat-test/pkg1/pkg-stop")
         );
-        expect(pkg).to.be.undefined;
+        expect(pkg).to.be.false;
       });
 
       it("should stop at /", () => {
         const dir = "/tmp/flat-test/no-pkg1/no-pkg2/";
         mkdirp.sync(dir);
         const pkg = flatModule.internals.findNearestPackage(dir);
-        expect(pkg).to.be.undefined;
+        expect(pkg).to.be.false;
       });
     });
 
