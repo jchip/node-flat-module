@@ -14,12 +14,12 @@ Module[ORIG_RESOLVE_LOOKUP_PATHS] = Module._resolveLookupPaths;
 Module[ORIG_FIND_PATH] = Module._findPath;
 
 const topDirMap = new Map();
-const flatFlagMap = new Map();
 const versionsMap = new Map();
 const pkgDataMap = new Map();
 const versionsDir = "__fv_";
 
 const debug = Module._debug;
+// const debug = console.log;
 const nodeModules = "node_modules";
 const packageJson = "package.json";
 
@@ -325,7 +325,7 @@ internals.getModuleVersions = (modName, modDir) => {
     // does there exist a default version
     //
     const pkg = internals.readPackage(modDir);
-    if (pkg) {
+    if (pkg && pkg._flatVersion) {
       if (versions.all.indexOf(pkg._flatVersion) < 0) {
         versions.all.push(pkg._flatVersion);
       }
@@ -355,9 +355,10 @@ function flatResolveLookupPaths(request, parent, newReturn) {
   const parentDir = parent.filename && path.dirname(parent.filename);
   const originDir = parentDir || process.cwd();
   const topDir = internals.searchTopDir(originDir);
-  let flatFlag = flatFlagMap.get(topDir.dir);
 
-  if (flatFlag === false) {
+  debug("topDir", topDir);
+
+  if (topDir.flat === false) {
     return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
   }
 
@@ -394,7 +395,7 @@ function flatResolveLookupPaths(request, parent, newReturn) {
   //
   if (pkg && pkg.bundledDependencies && pkg.bundledDependencies.indexOf(request) >= 0) {
     debug("has bundledDependencies", originDir, topDir.dir);
-    flatFlagMap.set(topDir.dir, false);
+    topDir.flat = false;
     return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
   }
 
@@ -432,11 +433,13 @@ function flatResolveLookupPaths(request, parent, newReturn) {
     // can't find _depResolutions, fallback to original node module resolution.
     //
     assert(
-      flatFlag === undefined,
-      `${request} flat module can't determine dep resolution but flat mode is already ${flatFlag}`
+      topDir.flat === undefined,
+      `${request} flat module can't determine dep resolution but flat mode is already ${
+        topDir.flat
+      }`
     );
-    flatFlag = false;
-    flatFlagMap.set(topDir.dir, flatFlag);
+    debug("no depRes found, setting topDir.flat to false");
+    topDir.flat = false;
 
     return {};
   };
@@ -454,7 +457,7 @@ function flatResolveLookupPaths(request, parent, newReturn) {
       //
       // dynamically match latest version
       //
-      if (pkg && flatFlag !== false) {
+      if (pkg && topDir.flat !== false) {
         const resolved = matchLatestSemVer("*", versions);
         depRes[moduleName] = { resolved };
         return resolved;
@@ -467,24 +470,27 @@ function flatResolveLookupPaths(request, parent, newReturn) {
 
   const moduleDir = path.join(topDir.dir, nodeModules, moduleName);
   const versions = internals.getModuleVersions(moduleName, moduleDir);
-  debug("versions", versions, reqParts);
   const version = reqParts.semVer
     ? matchLatestSemVer(reqParts.semVer, versions)
     : getResolvedVersion(versions);
+
+  debug("versions", versions, reqParts, "version", version);
 
   //
   // unable to resolve a version for a dependency, error out
   //
   if (!version) {
-    if (flatFlag === false) {
+    if (topDir.flat === false) {
+      debug("flat false, original lookup");
       return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
     }
+    debug("no version, fail");
     /* istanbul ignore next */
     return newReturn ? null : [request, []]; // force not found error out
   }
 
-  if (flatFlag === undefined) {
-    flatFlagMap.set(topDir.dir, true);
+  if (topDir.flat === undefined) {
+    topDir.flat = true;
   }
 
   const versionFp =
