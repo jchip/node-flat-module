@@ -16,7 +16,7 @@ Module[ORIG_FIND_PATH] = Module._findPath;
 const topDirMap = new Map();
 const versionsMap = new Map();
 const pkgDataMap = new Map();
-const versionsDir = "__fv_";
+const __FV_DIR = "__fv_";
 
 const debug = Module._debug;
 // const debug = console.log;
@@ -200,7 +200,7 @@ internals.findModuleName = (dir, request) => {
   }
   dir = path.join(dir, nodeModules);
 
-  const hasVersionsDir = d => fs.existsSync(path.join(d, versionsDir));
+  const hasVersionsDir = d => fs.existsSync(path.join(d, __FV_DIR));
   const hasPkgJson = d => fs.existsSync(path.join(d, "package.json"));
 
   let i;
@@ -318,7 +318,7 @@ internals.getModuleVersions = (modName, modDir) => {
   debug("getModuleVersions", modName, modDir);
 
   if (!versionsMap.has(modDir) && fs.existsSync(modDir)) {
-    const vDir = path.join(modDir, versionsDir);
+    const vDir = path.join(modDir, __FV_DIR);
     let versions = { all: !fs.existsSync(vDir) ? [] : fs.readdirSync(vDir) };
 
     //
@@ -496,7 +496,7 @@ function flatResolveLookupPaths(request, parent, newReturn) {
   const versionFp =
     version === versions.default
       ? path.join(topDir.dir, nodeModules)
-      : path.join(moduleDir, versionsDir, version);
+      : path.join(moduleDir, __FV_DIR, version);
 
   debug("versionFp", versionFp);
 
