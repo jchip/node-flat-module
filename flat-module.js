@@ -13,7 +13,6 @@ assert(!Module[ORIG_RESOLVE_LOOKUP_PATHS], "Flat Module system already installed
 Module[ORIG_RESOLVE_LOOKUP_PATHS] = Module._resolveLookupPaths;
 Module[ORIG_FIND_PATH] = Module._findPath;
 
-const linkedMap = new Map();
 const topDirMap = new Map();
 const flatFlagMap = new Map();
 const versionsMap = new Map();
@@ -26,40 +25,10 @@ const packageJson = "package.json";
 
 let internals = {};
 
-// vvv copied from https://github.com/domenic/path-is-inside/blob/master/lib/path-is-inside.js
-
-function pathIsInside(thePath, potentialParent) {
-  // For inside-directory checking, we want to allow trailing slashes, so normalize.
-  thePath = stripTrailingSep(thePath);
-  potentialParent = stripTrailingSep(potentialParent);
-
-  // Node treats only Windows as case-insensitive in its path module; we follow those conventions.
-  /* istanbul ignore next */
-  if (process.platform === "win32") {
-    thePath = thePath.toLowerCase();
-    potentialParent = potentialParent.toLowerCase();
-  }
-
-  return (
-    thePath.lastIndexOf(potentialParent, 0) === 0 &&
-    (thePath[potentialParent.length] === path.sep || thePath[potentialParent.length] === undefined)
-  );
-}
-
-function stripTrailingSep(thePath) {
-  /* istanbul ignore next */
-  if (thePath[thePath.length - 1] === path.sep) {
-    return thePath.slice(0, -1);
-  }
-  return thePath;
-}
-
-// ^^^ https://github.com/domenic/path-is-inside/blob/master/lib/path-is-inside.js
-
 internals.getLinkedInfo = nmDir => {
   const linkedF = path.join(nmDir, "__linked_from.json");
   if (fs.existsSync(linkedF)) {
-    const linked = JSON.parse(fs.readFileSync(linkedF));
+    const linked = internals.readJSON(linkedF);
     return linked[process.cwd()];
   }
   return false;
@@ -145,30 +114,38 @@ internals.searchUpDir = (dir, stopDir, singleStops, checkCb) => {
 // and use that as topDir
 //
 internals.searchTopDir = originDir => {
-  let dir;
-  let linkedInfo;
-
-  const cwd = process.cwd();
-
-  internals.searchUpDir(originDir, null, null, x => {
-    const nmDir = path.join(x, nodeModules);
-    if (fs.existsSync(nmDir)) {
-      dir = x; // yay, found node_modules
-      // but is it a linked module?
-      const cacheKey = cwd + ":" + nmDir;
-      if (!linkedMap.has(cacheKey)) {
-        linkedMap.set(cacheKey, internals.getLinkedInfo(nmDir));
-      }
-      linkedInfo = linkedMap.get(cacheKey);
-      if (linkedInfo) {
-        dir = cwd; // switch to looking in CWD for linked mod
-      }
-      return true;
+  return internals.searchUpDir(originDir, null, null, dir => {
+    if (topDirMap.has(dir)) {
+      return topDirMap.get(dir);
     }
+
+    const nmDir = path.join(dir, nodeModules);
+    if (fs.existsSync(nmDir)) {
+      // yay, found node_modules
+      // but is it a linked module?
+      const linkedInfo = internals.getLinkedInfo(nmDir);
+
+      // switch topDir to CWD for linked mod
+      const td = linkedInfo ? { dir: process.cwd(), linkedInfo } : { dir };
+
+      //
+      // Look for topDir/node_modules/__dep_resolutions.json
+      //
+      const ff = path.join(td.dir, nodeModules, "__dep_resolutions.json");
+      if (fs.existsSync(ff)) {
+        td.depRes = internals.readJSON(ff);
+      }
+
+      topDirMap.set(dir, td);
+
+      return td;
+    }
+
+    // remember that dir has already been checked but not qualify as top dir
+    topDirMap.set(dir, undefined);
+
     return undefined;
   });
-
-  return { dir, linkedInfo };
 };
 
 internals.readJSON = f => {
@@ -375,44 +352,9 @@ function flatResolveLookupPaths(request, parent, newReturn) {
 
   debug(`flat _resolveLookupPaths: request ${request} parent.id ${parent && parent.id}`);
 
-  const cwd = process.cwd();
-
-  const findTopDir = originDir => {
-    // if parentDir is under CWD, look for node_modules
-    if (pathIsInside(originDir, cwd)) {
-      // If there is node_modules right where request originated, then use it as topDir
-      if (fs.existsSync(path.join(originDir, nodeModules))) {
-        return { dir: originDir };
-      } else {
-        // TODO: check win32 if it's `\node_modules` or `/node_modules`
-        // If the dir itself already has `/node_modules` then take the dir
-        // one level up from where that occurred as topDir
-        const nmIndex = originDir.lastIndexOf(path.sep + nodeModules);
-        if (nmIndex >= 0) {
-          return { dir: path.join(originDir.substr(0, nmIndex + nodeModules.length + 1), "..") };
-        }
-      }
-    }
-
-    // can't figure out topDir quickly, so have do dir search up for node_modules
-    return internals.searchTopDir(originDir);
-  };
-
-  const getTopDir = originDir => {
-    if (topDirMap.has(originDir)) {
-      const d = topDirMap.get(originDir);
-      debug("got topDir from map", d, originDir);
-      return d;
-    } else {
-      const td = findTopDir(originDir);
-      topDirMap.set(originDir, td);
-      return td;
-    }
-  };
-
   const parentDir = parent.filename && path.dirname(parent.filename);
-  const originDir = parentDir || cwd;
-  const topDir = getTopDir(originDir);
+  const originDir = parentDir || process.cwd();
+  const topDir = internals.searchTopDir(originDir);
   let flatFlag = flatFlagMap.get(topDir.dir);
 
   if (flatFlag === false) {
@@ -470,10 +412,6 @@ function flatResolveLookupPaths(request, parent, newReturn) {
       return pkg._depResolutions;
     }
 
-    if (pkg._topDepRes) {
-      return pkg._topDepRes;
-    }
-
     //
     // package.json doesn't have _depResolutions entry
     // is it linked module? Then look inside linked info
@@ -487,15 +425,7 @@ function flatResolveLookupPaths(request, parent, newReturn) {
     }
 
     if (topDir.depRes) {
-      return (pkg._topDepRes = topDir.depRes);
-    } else {
-      //
-      // is it topDir/package.json? Then look for topDir/node_modules/__dep_resolutions.json
-      //
-      const ff = path.join(topDir.dir, nodeModules, "__dep_resolutions.json");
-      if (fs.existsSync(ff)) {
-        return (topDir.depRes = pkg._topDepRes = internals.readJSON(ff));
-      }
+      return topDir.depRes;
     }
 
     //
