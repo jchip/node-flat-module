@@ -334,10 +334,10 @@ internals.getModuleVersions = (modName, modDir) => {
     }
 
     versions.all = versions.all.sort(internals.semVerCompare);
-    versionsMap.set(modName, versions);
+    versionsMap.set(modDir, versions);
   }
 
-  return versionsMap.get(modName);
+  return versionsMap.get(modDir);
 };
 
 const _PACKAGE = Symbol("_package");
