@@ -13,20 +13,18 @@ assert(!Module[ORIG_RESOLVE_LOOKUP_PATHS], "Flat Module system already installed
 Module[ORIG_RESOLVE_LOOKUP_PATHS] = Module._resolveLookupPaths;
 Module[ORIG_FIND_PATH] = Module._findPath;
 
-const topDirMap = new Map();
-const versionsMap = new Map();
-const pkgDataMap = new Map();
+const DIR_MAP = new Map();
 const __FV_DIR = "__fv_";
 
 const debug = Module._debug;
 // const debug = console.log;
-const nodeModules = "node_modules";
-const packageJson = "package.json";
+const NODE_MODULES = "node_modules";
+const PACKAGE_JSON = "package.json";
 
 let internals = {};
 
-internals.getLinkedInfo = nmDir => {
-  const linkedF = path.join(nmDir, "__linked_from.json");
+internals.getLinkedInfo = dir => {
+  const linkedF = path.join(dir, "__linked_from.json");
   if (fs.existsSync(linkedF)) {
     const linked = internals.readJSON(linkedF);
     return linked[process.cwd()];
@@ -115,36 +113,40 @@ internals.searchUpDir = (dir, stopDir, singleStops, checkCb) => {
 //
 internals.searchTopDir = originDir => {
   return internals.searchUpDir(originDir, null, null, dir => {
-    if (topDirMap.has(dir)) {
-      return topDirMap.get(dir);
+    const dm = internals.getDirMap(dir);
+
+    if (dm.hasOwnProperty("dir")) {
+      // already known to qualify as top dir or not
+      return dm.dir && dm;
     }
 
-    const nmDir = path.join(dir, nodeModules);
+    const nmDir = path.join(dir, NODE_MODULES);
     if (fs.existsSync(nmDir)) {
       // yay, found node_modules
       // but is it a linked module?
       const linkedInfo = internals.getLinkedInfo(nmDir);
 
-      // switch topDir to CWD for linked mod
-      const td = linkedInfo ? { dir: process.cwd(), linkedInfo } : { dir };
+      if (linkedInfo) {
+        // switch topDir to CWD for linked mod
+        dm.dir = process.cwd();
+        dm.linkedInfo = linkedInfo;
+      } else {
+        dm.dir = dir;
+      }
 
       //
       // Look for topDir/node_modules/__dep_resolutions.json
       //
-      const ff = path.join(td.dir, nodeModules, "__dep_resolutions.json");
+      const ff = path.join(dm.dir, NODE_MODULES, "__dep_resolutions.json");
       if (fs.existsSync(ff)) {
-        td.depRes = internals.readJSON(ff);
+        dm.depRes = internals.readJSON(ff);
       }
 
-      topDirMap.set(dir, td);
-
-      return td;
+      return dm;
     }
 
     // remember that dir has already been checked but not qualify as top dir
-    topDirMap.set(dir, undefined);
-
-    return undefined;
+    return (dm.dir = undefined);
   });
 };
 
@@ -152,14 +154,27 @@ internals.readJSON = f => {
   return JSON.parse(fs.readFileSync(f));
 };
 
+internals.getDirMap = dir => {
+  if (!DIR_MAP.has(dir)) {
+    DIR_MAP.set(dir, {});
+  }
+
+  return DIR_MAP.get(dir);
+};
+
 internals.readPackage = dir => {
-  if (pkgDataMap.has(dir)) return pkgDataMap.get(dir);
-  const pkgFile = path.join(dir, packageJson);
-  if (!fs.existsSync(pkgFile)) return false;
+  const dm = internals.getDirMap(dir);
+
+  if (dm.hasOwnProperty("pkg")) return dm.pkg;
+
+  const pkgFile = path.join(dir, PACKAGE_JSON);
+  if (!fs.existsSync(pkgFile)) {
+    return (dm.pkg = undefined);
+  }
 
   const pkg = internals.readJSON(pkgFile);
 
-  const x = {
+  dm.pkg = {
     name: pkg.name,
     version: pkg.version,
     dependencies: pkg.dependencies,
@@ -168,14 +183,13 @@ internals.readPackage = dir => {
     _depResolutions: pkg._depResolutions
   };
 
-  pkgDataMap.set(dir, x);
-
-  return x;
+  return dm.pkg;
 };
 
 internals.findMappedPackage = (dir, stopDir, singleStops) => {
   return internals.searchUpDir(dir, stopDir, singleStops, x => {
-    return pkgDataMap.has(dir) ? pkgDataMap.get(dir) : undefined;
+    const pm = internals.getDirMap(dir);
+    return pm && pm.pkg;
   });
 };
 
@@ -185,8 +199,7 @@ internals.findNearestPackage = (dir, stopDir, singleStops) => {
   if (mappedPkg) return mappedPkg;
 
   return internals.searchUpDir(dir, stopDir, singleStops, x => {
-    const pkg = internals.readPackage(x);
-    return pkg || undefined;
+    return internals.readPackage(x);
   });
 };
 
@@ -198,7 +211,7 @@ internals.findModuleName = (dir, request) => {
   if (splits.length < 2) {
     return request;
   }
-  dir = path.join(dir, nodeModules);
+  dir = path.join(dir, NODE_MODULES);
 
   const hasVersionsDir = d => fs.existsSync(path.join(d, __FV_DIR));
   const hasPkgJson = d => fs.existsSync(path.join(d, "package.json"));
@@ -232,13 +245,17 @@ internals.isRelativePathRequest = request => {
 };
 
 internals.useOriginalLookup = (request, parent) => {
+  /* istanbul ignore next */
   if (request === "<repl>") return true;
-  if (path.isAbsolute(request) || internals.isRelativePathRequest(request)) return true;
-  // if origin contains two or more node_modules then let original module system handle it
-  const x = (parent && parent.filename && parent.filename.indexOf(nodeModules)) || -1;
-  return x >= 0 && parent.filename.indexOf(nodeModules, x + 1) > x;
+  return path.isAbsolute(request) || internals.isRelativePathRequest(request);
 };
-
+//
+// - parse require string in the form of:
+// 1. "name@version" => {request: "name", semVer: "version"}
+// 2. "name@version/path/to/mod" => {request: "name/path/to/mod", semVer: "version"}
+// ie: require("debug@2.6.8")
+// - version supports semver in the form of x.x.x, ie: 2.x.x
+//
 internals.parseRequest = request => {
   let semVer = "";
   const xAt = request.indexOf("@");
@@ -314,33 +331,47 @@ internals.semVerCompare = (a, b) => {
   return a > b ? 1 : -1;
 };
 
-internals.getModuleVersions = (modName, modDir) => {
-  debug("getModuleVersions", modName, modDir);
+internals.getModuleVersions = modDir => {
+  debug("getModuleVersions", modDir);
 
-  if (!versionsMap.has(modDir) && fs.existsSync(modDir)) {
+  const dm = internals.getDirMap(modDir);
+
+  if (dm.hasOwnProperty("versions")) {
+    return dm.versions || { all: [] };
+  }
+
+  if (fs.existsSync(modDir)) {
     const vDir = path.join(modDir, __FV_DIR);
-    let versions = { all: !fs.existsSync(vDir) ? [] : fs.readdirSync(vDir) };
+    const all = fs.existsSync(vDir) ? fs.readdirSync(vDir) : [];
 
+    const versions = {};
     //
     // does there exist a default version
     //
-    const pkg = internals.readPackage(modDir);
-    if (pkg && pkg._flatVersion) {
-      if (versions.all.indexOf(pkg._flatVersion) < 0) {
-        versions.all.push(pkg._flatVersion);
-      }
-
-      versions.default = pkg._flatVersion;
+    if (!dm.hasOwnProperty("pkg")) {
+      internals.readPackage(modDir);
     }
 
-    versions.all = versions.all.sort(internals.semVerCompare);
-    versionsMap.set(modDir, versions);
+    if (dm.pkg && dm.pkg._flatVersion) {
+      if (all.indexOf(dm.pkg._flatVersion) < 0) {
+        all.push(dm.pkg._flatVersion);
+      }
+
+      versions.default = dm.pkg._flatVersion;
+    }
+
+    if (all.length > 0) {
+      versions.all = all.sort(internals.semVerCompare);
+      dm.versions = versions;
+    }
   }
 
-  return versionsMap.get(modDir);
-};
+  if (!dm.hasOwnProperty("versions")) {
+    dm.versions = undefined;
+  }
 
-const _PACKAGE = Symbol("_package");
+  return dm.versions || { all: [] };
+};
 
 function flatResolveLookupPaths(request, parent, newReturn) {
   if (internals.useOriginalLookup(request, parent)) {
@@ -362,6 +393,23 @@ function flatResolveLookupPaths(request, parent, newReturn) {
     return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
   }
 
+  //
+  // search from parent's location up to topDir or / for package.json and load it
+  // stopping if a directory named node_modules is seen since
+  // that means what's being searched is an installed module and should have
+  // a package.json found already.
+  //
+  const pkg = internals.findNearestPackage(originDir, topDir.dir, [NODE_MODULES]);
+
+  //
+  // Pkg has bundledDependencies: use original module system
+  //
+  if (pkg && pkg.bundledDependencies && pkg.bundledDependencies.indexOf(request) >= 0) {
+    debug("has bundledDependencies", originDir, topDir.dir);
+    topDir.flat = false;
+    return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
+  }
+
   // If can't figure out topDir, then give up.
   if (!topDir.dir) {
     /* istanbul ignore next */
@@ -374,30 +422,6 @@ function flatResolveLookupPaths(request, parent, newReturn) {
   //
 
   const moduleName = internals.findModuleName(topDir.dir, request);
-
-  let pkg = parent[_PACKAGE];
-
-  if (!pkg) {
-    //
-    // search from parent's location up to topDir or / for package.json and load it
-    // stopping if a directory named node_modules is seen since
-    // that means what's being searched is an installed module and should have
-    // a package.json found already.
-    //
-    pkg = internals.findNearestPackage(originDir, topDir.dir, [nodeModules]);
-    if (pkg) {
-      parent[_PACKAGE] = pkg;
-    }
-  }
-
-  //
-  // Pkg has bundledDependencies: use original module system
-  //
-  if (pkg && pkg.bundledDependencies && pkg.bundledDependencies.indexOf(request) >= 0) {
-    debug("has bundledDependencies", originDir, topDir.dir);
-    topDir.flat = false;
-    return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
-  }
 
   // lookup specific version mapped for parent inside its nearest package.json
   const getDepResolutions = (topDir, pkg) => {
@@ -468,8 +492,8 @@ function flatResolveLookupPaths(request, parent, newReturn) {
     return r.resolved;
   };
 
-  const moduleDir = path.join(topDir.dir, nodeModules, moduleName);
-  const versions = internals.getModuleVersions(moduleName, moduleDir);
+  const moduleDir = path.join(topDir.dir, NODE_MODULES, moduleName);
+  const versions = internals.getModuleVersions(moduleDir);
   const version = reqParts.semVer
     ? matchLatestSemVer(reqParts.semVer, versions)
     : getResolvedVersion(versions);
@@ -495,7 +519,7 @@ function flatResolveLookupPaths(request, parent, newReturn) {
 
   const versionFp =
     version === versions.default
-      ? path.join(topDir.dir, nodeModules)
+      ? path.join(topDir.dir, NODE_MODULES)
       : path.join(moduleDir, __FV_DIR, version);
 
   debug("versionFp", versionFp);
