@@ -379,6 +379,48 @@ internals.getModuleVersions = modDir => {
   return dm.versions || { all: [] };
 };
 
+// lookup specific version mapped for parent inside its nearest package.json
+internals.getDepResolutions = (dirInfo, pkg, request) => {
+  if (!pkg) {
+    return {};
+  }
+
+  //
+  // common case - a package manager should've install a package with _depResolutions
+  // saved in its package.json file.
+  //
+  if (pkg._depResolutions) {
+    return pkg._depResolutions;
+  }
+
+  //
+  // package.json doesn't have _depResolutions entry
+  // is it linked module? Then look inside linked info
+  //
+
+  const linkedInfo = dirInfo.linkedInfo;
+  if (linkedInfo && linkedInfo._depResolutions) {
+    debug(`Using linkedInfo._depResolutions for ${request}`);
+    return linkedInfo._depResolutions;
+  }
+
+  if (dirInfo.depRes) {
+    return dirInfo.depRes;
+  }
+
+  //
+  // can't find _depResolutions, fallback to original node module resolution.
+  //
+  assert(
+    dirInfo.flat === undefined,
+    `${request} flat module can't determine dep resolution but flat mode is already ${dirInfo.flat}`
+  );
+  debug("no depRes found, setting dirInfo.flat to false");
+  dirInfo.flat = false;
+
+  return {};
+};
+
 function flatResolveLookupPaths(request, parent, newReturn) {
   if (internals.useOriginalLookup(request, parent)) {
     return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
@@ -427,60 +469,16 @@ function flatResolveLookupPaths(request, parent, newReturn) {
   // Next resolve the version of the module to load.
   //
 
-  const moduleName = internals.findModuleName(dirInfo.top, request);
-
-  // lookup specific version mapped for parent inside its nearest package.json
-  const getDepResolutions = (dirInfo, pkg) => {
-    if (!pkg) {
-      return {};
-    }
-
-    //
-    // common case - a package manager should've install a package with _depResolutions
-    // saved in its package.json file.
-    //
-    if (pkg._depResolutions) {
-      return pkg._depResolutions;
-    }
-
-    //
-    // package.json doesn't have _depResolutions entry
-    // is it linked module? Then look inside linked info
-    //
-
-    const linkedInfo = dirInfo.linkedInfo;
-    if (linkedInfo && linkedInfo._depResolutions) {
-      debug(`Using linkedInfo._depResolutions for ${request}`);
-      return linkedInfo._depResolutions;
-    }
-
-    if (dirInfo.depRes) {
-      return dirInfo.depRes;
-    }
-
-    //
-    // can't find _depResolutions, fallback to original node module resolution.
-    //
-    assert(
-      dirInfo.flat === undefined,
-      `${request} flat module can't determine dep resolution but flat mode is already ${
-        dirInfo.flat
-      }`
-    );
-    debug("no depRes found, setting dirInfo.flat to false");
-    dirInfo.flat = false;
-
-    return {};
-  };
-
   const matchLatestSemVer = (semVer, versions) => {
     const matched = versions.all.filter(v => internals.semVerMatch(semVer, v));
     debug("matched latest", matched, "for", semVer);
     return matched.length > 0 && matched[matched.length - 1];
   };
 
+  const moduleName = internals.findModuleName(dirInfo.top, request);
+
   const getResolvedVersion = versions => {
-    const depRes = getDepResolutions(dirInfo, pkg);
+    const depRes = internals.getDepResolutions(dirInfo, pkg, request);
     const r = depRes[moduleName];
     if (!r || versions.all.indexOf(r.resolved) < 0) {
       //
