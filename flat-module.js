@@ -205,27 +205,29 @@ internals.findNearestPackage = (dir, stopDir, singleStops) => {
 };
 
 //
-// find module name by matching dir name to request under <dir>/node_modules
+// Find module name by matching dir name to request under <dir>/node_modules
+// For handling calls like: require("foo/lib/bar") and require("@ns/foo")
 //
 internals.findModuleName = (dir, request) => {
   const splits = request.split("/");
+  // is it a simple require("foo")?
   if (splits.length < 2) {
     return request;
   }
-  dir = path.join(dir, NODE_MODULES);
 
-  // TODO: utilize DIR_MAP
-  const hasVersionsDir = d => fs.existsSync(path.join(d, __FV_DIR));
-  const hasPkgJson = d => fs.existsSync(path.join(d, "package.json"));
+  const hasPkgOrFV = d => internals.readPackage(d) || internals.getModuleVersions(d).fv;
+
+  dir = path.join(dir, NODE_MODULES);
 
   let i;
   for (i = 0; i < splits.length; i++) {
     dir = path.join(dir, splits[i]);
-    if (hasVersionsDir(dir) || hasPkgJson(dir)) {
+    if (hasPkgOrFV(dir)) {
       request = splits.slice(0, i + 1).join("/");
       break;
     }
   }
+
   return request;
 };
 
@@ -343,17 +345,19 @@ internals.getModuleVersions = modDir => {
   }
 
   if (fs.existsSync(modDir)) {
-    const vDir = path.join(modDir, __FV_DIR);
-    const all = fs.existsSync(vDir) ? fs.readdirSync(vDir) : [];
-
     const versions = {};
-    //
-    // does there exist a default version
-    //
     if (!dm.hasOwnProperty("pkg")) {
       internals.readPackage(modDir);
     }
 
+    const vDir = path.join(modDir, __FV_DIR);
+    const all = fs.existsSync(vDir) ? fs.readdirSync(vDir) : [];
+
+    if (all.length > 0) versions.fv = true;
+
+    //
+    // does there exist a default version
+    //
     if (dm.pkg && dm.pkg._flatVersion) {
       if (all.indexOf(dm.pkg._flatVersion) < 0) {
         all.push(dm.pkg._flatVersion);
@@ -412,7 +416,7 @@ function flatResolveLookupPaths(request, parent, newReturn) {
     return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
   }
 
-  // If can't figure out topDir, then give up.
+  // If can't figure out top dir, then give up.
   if (!dirInfo.top) {
     /* istanbul ignore next */
     return newReturn ? null : [request, []]; // force not found error out
@@ -426,7 +430,7 @@ function flatResolveLookupPaths(request, parent, newReturn) {
   const moduleName = internals.findModuleName(dirInfo.top, request);
 
   // lookup specific version mapped for parent inside its nearest package.json
-  const getDepResolutions = (topDir, pkg) => {
+  const getDepResolutions = (dirInfo, pkg) => {
     if (!pkg) {
       return {};
     }
@@ -444,28 +448,27 @@ function flatResolveLookupPaths(request, parent, newReturn) {
     // is it linked module? Then look inside linked info
     //
 
-    const linkedInfo = topDir.linkedInfo;
+    const linkedInfo = dirInfo.linkedInfo;
     if (linkedInfo && linkedInfo._depResolutions) {
-      pkg._depResolutions = linkedInfo._depResolutions;
       debug(`Using linkedInfo._depResolutions for ${request}`);
       return linkedInfo._depResolutions;
     }
 
-    if (topDir.depRes) {
-      return topDir.depRes;
+    if (dirInfo.depRes) {
+      return dirInfo.depRes;
     }
 
     //
     // can't find _depResolutions, fallback to original node module resolution.
     //
     assert(
-      topDir.flat === undefined,
+      dirInfo.flat === undefined,
       `${request} flat module can't determine dep resolution but flat mode is already ${
-        topDir.flat
+        dirInfo.flat
       }`
     );
-    debug("no depRes found, setting topDir.flat to false");
-    topDir.flat = false;
+    debug("no depRes found, setting dirInfo.flat to false");
+    dirInfo.flat = false;
 
     return {};
   };
