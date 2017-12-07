@@ -448,11 +448,12 @@ function flatResolveLookupPaths(request, parent, newReturn) {
   // a package.json found already.
   //
   const pkg = internals.findNearestPackage(originDir, dirInfo.top, [NODE_MODULES]);
+  const moduleName = internals.findModuleName(dirInfo.top, request);
 
   //
   // Pkg has bundledDependencies: use original module system
   //
-  if (pkg && pkg.bundledDependencies && pkg.bundledDependencies.indexOf(request) >= 0) {
+  if (pkg && pkg.bundledDependencies && pkg.bundledDependencies.indexOf(moduleName) >= 0) {
     debug("has bundledDependencies", originDir, dirInfo.top);
     dirInfo.flat = false;
     return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
@@ -474,8 +475,6 @@ function flatResolveLookupPaths(request, parent, newReturn) {
     debug("matched latest", matched, "for", semVer);
     return matched.length > 0 && matched[matched.length - 1];
   };
-
-  const moduleName = internals.findModuleName(dirInfo.top, request);
 
   const getResolvedVersion = versions => {
     const depRes = internals.getDepResolutions(dirInfo, pkg, request);
