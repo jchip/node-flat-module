@@ -5,8 +5,8 @@ const fs = require("fs");
 const assert = require("assert");
 const path = require("path");
 
-const ORIG_RESOLVE_LOOKUP_PATHS = Symbol("ORIG_RESOLVE_LOOKUP_PATHS");
-const ORIG_FIND_PATH = Symbol("ORIG_FIND_PATH");
+const ORIG_RESOLVE_LOOKUP_PATHS = Symbol("node-flat-module-orig-resolve-lookup-paths");
+const ORIG_FIND_PATH = Symbol("node-flat-module-orig-find-path");
 
 assert(!Module[ORIG_RESOLVE_LOOKUP_PATHS], "Flat Module system already installed");
 
