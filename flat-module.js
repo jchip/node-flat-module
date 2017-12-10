@@ -24,7 +24,7 @@ const PACKAGE_JSON = "package.json";
 let internals = {};
 
 internals.getLinkedInfo = dir => {
-  const linkedF = path.join(dir, "__linked_from.json");
+  const linkedF = path.join(dir, "__fyn_link__.json");
   if (fs.existsSync(linkedF)) {
     const linked = internals.readJSON(linkedF);
     return linked[process.cwd()];
@@ -125,7 +125,7 @@ internals.searchTopDir = originDir => {
       // yay, found node_modules
       // but is it a linked module?
       const linkedInfo = internals.getLinkedInfo(nmDir);
-
+  
       if (linkedInfo) {
         // switch topDir to CWD for linked mod
         dm.top = process.cwd();
