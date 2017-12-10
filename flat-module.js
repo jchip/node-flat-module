@@ -57,14 +57,14 @@ internals.getLinkedInfo = dir => {
 // ** It could be a linked module.
 // we could do what's always been done - force linked modules to have their
 // own dependencies, or handle this in the module system.  So under its own
-// node_modules directory, have a __linked_from.json with a list
+// node_modules directory, have a __fyn_link__.json with a list
 // of directories for apps that have linked to it.  When that file is detected
 // and CWD is listed in it, then switch to looking in CWD for node_modules.
 //
 // linked module should:
 //   - has all its dependencies installed in host's node_modules
-//   - has a __linked_from.json in its own node_modules
-//   - (optionally) has its own __dep_resolutions.json, use when being developed itself
+//   - has a __fyn_link__.json in its own node_modules
+//   - (optionally) has its own __fyn_resolutions__.json, use when being developed itself
 //
 // If a module is not installed by semver, then its resolve version is:
 //
@@ -75,7 +75,7 @@ internals.getLinkedInfo = dir => {
 //
 // A package manager should:
 //   - save _depResolutions in an installed module's package.json.
-//   - create __dep_resolutions.json under CWD/node_modules
+//   - create __fyn_resolutions__.json under CWD/node_modules
 //
 // _depResolutions should contain the exact version that was resolved
 // for the given module's dependencies semver
@@ -135,9 +135,9 @@ internals.searchTopDir = originDir => {
       }
 
       //
-      // Look for topDir/node_modules/__dep_resolutions.json
+      // Look for topDir/node_modules/__fyn_resolutions__.json
       //
-      const ff = path.join(dm.top, NODE_MODULES, "__dep_resolutions.json");
+      const ff = path.join(dm.top, NODE_MODULES, "__fyn_resolutions__.json");
       if (fs.existsSync(ff)) {
         dm.depRes = internals.readJSON(ff);
       }

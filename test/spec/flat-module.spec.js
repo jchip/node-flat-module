@@ -31,7 +31,7 @@ function linkModule(name, app, options) {
     Fs.symlinkSync(modLoc, modLinkDir);
   }
   if (!options.noTarget) {
-    const linkedFile = Path.join(modLinkVersionDir, "__linked_target.json");
+    const linkedFile = Path.join(modLinkVersionDir, "__fyn_link__.json");
     Fs.writeFileSync(
       linkedFile,
       JSON.stringify(
@@ -46,7 +46,7 @@ function linkModule(name, app, options) {
     );
   }
   if (!options.noFrom) {
-    const modLinkFrom = Path.join(modLoc, "node_modules", "__linked_from.json");
+    const modLinkFrom = Path.join(modLoc, "node_modules", "__fyn_link__.json");
     Fs.writeFileSync(
       modLinkFrom,
       JSON.stringify(
@@ -64,7 +64,7 @@ function linkModule(name, app, options) {
       ) + "\n"
     );
   }
-  const depResFile = Path.join(appDir, "node_modules", "__dep_resolutions.json");
+  const depResFile = Path.join(appDir, "node_modules", "__fyn_resolutions__.json");
   const depRes = require(depResFile);
   depRes[name] = depRes[name] || {};
   depRes[name].resolved = modLinkVersion;
@@ -80,7 +80,7 @@ describe("flat-module", function() {
     process.chdir("test/fixtures/app");
     appCwd = process.cwd();
     rimraf.sync("node_modules/**/v_symlink*");
-    rimraf.sync("../zoo/node_modules/__linked_from.json");
+    rimraf.sync("../zoo/node_modules/__fyn_link__.json");
     rimraf.sync("/tmp/flat-test");
     linkModule("zoo", "app");
     linkModule("fox", "app", { noFrom: true });
@@ -88,7 +88,7 @@ describe("flat-module", function() {
 
   after(() => {
     rimraf.sync("node_modules/**/v_symlink*");
-    rimraf.sync("../zoo/node_modules/__linked_from.json");
+    rimraf.sync("../zoo/node_modules/__fyn_link__.json");
     rimraf.sync("/tmp/flat-test");
     flatModule.restore();
     delete require.cache[require.resolve("optional-require")];
@@ -120,7 +120,7 @@ describe("flat-module", function() {
     expect(scoped.barLib).to.equal("bar");
   });
 
-  it("should load a linked module", () => {
+  it.only("should load a linked module", () => {
     const linked = require(Path.resolve("tests/test_linked"));
     expect(linked.zoo.foo.version).to.equal("2.0.1");
     expect(linked.zoo.name).to.equal("zoo");
@@ -191,7 +191,7 @@ describe("flat-module", function() {
     expect(() => require(Path.resolve("tests/test_missing"))).to.throw();
   });
 
-  it("should fail if linked module missing __linked_from.json file", () => {
+  it("should fail if linked module missing __fyn_link__.json file", () => {
     expect(() => require(Path.resolve("tests/test_fox"))).to.throw();
   });
 

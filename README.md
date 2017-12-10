@@ -54,7 +54,7 @@ Node's `node_modules` system.
 -   Dependencies information is retained and checked at run time.
     -   The file `package.json` will be significant for dependencies version resolution at run time.
     -   When package manager installs a module, it inserts a section `_depResolutions` into `package.json`.
-    -   For the application, a file `__dep_resolutions.json` will be saved to its `node_modules` directory.
+    -   For the application, a file `__fyn_resolutions__.json` will be saved to its `node_modules` directory.
     -   You can explicitly specify a version in code when calling `require`
         -   ie: `require("foo@3")` or `require("foo@3.5.x/lib/blah")`
     -   In a section `extraDependencies` in package.json, you can use an array of multiple semvers for a dependency.
@@ -62,8 +62,9 @@ Node's `node_modules` system.
         -   Mainly something for package manager to implement.
         -   The first one in the array would be the default resolution.
 -   Internally aware of linked modules to make `npm link` a more robust approach to module development.
-    -   Linked module will have a `node_modules` directory, within which is a `__linked_from.json` with linking and dependencies resolution info.
-    -   The application linking a module will have a `__linked_target.json` file with linking info for each linked module.
+    -   Linked module will have a `node_modules` directory, within which is a `__fyn_link__.json` with linking and dependencies resolution info.
+    -   The application linking a module will have a `__fyn_link__.json` file with linking info for each linked module.
+        -   This is informational only and is not used for module loading.
     -   Dependencies for the linked module will be solely resolved from the application's `node_modules`.
 -   Will fallback to original module system if no dependencies resolution information found.
 
