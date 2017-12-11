@@ -120,7 +120,14 @@ describe("flat-module", function() {
     expect(scoped.barLib).to.equal("bar");
   });
 
-  it.only("should load a linked module", () => {
+  it("should load module that has bundledDependencies", () => {
+    const boo = requireAt(appCwd)("boo");
+    expect(boo.boos).to.deep.equal([["boo-1", "boo-2"], "boo-2"]);
+    expect(boo.foo.name).to.equal("foo");
+    expect(boo.foo.version).to.equal("5.10.7");
+  });
+
+  it("should load a linked module", () => {
     const linked = require(Path.resolve("tests/test_linked"));
     expect(linked.zoo.foo.version).to.equal("2.0.1");
     expect(linked.zoo.name).to.equal("zoo");
