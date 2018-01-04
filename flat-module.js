@@ -16,7 +16,7 @@ Module[ORIG_FIND_PATH] = Module._findPath;
 const DIR_MAP = new Map();
 const __FV_DIR = "__fv_";
 
-const debug = Module._debug;
+const debug = () => undefined;
 // const debug = console.log;
 const NODE_MODULES = "node_modules";
 const PACKAGE_JSON = "package.json";
@@ -125,7 +125,7 @@ internals.searchTopDir = originDir => {
       // yay, found node_modules
       // but is it a linked module?
       const linkedInfo = internals.getLinkedInfo(nmDir);
-  
+
       if (linkedInfo) {
         // switch topDir to CWD for linked mod
         dm.top = process.cwd();
@@ -184,6 +184,7 @@ internals.readPackage = dir => {
   if (bd) dm.pkg.bundledDependencies = bd;
   if (pkg._depResolutions) dm.pkg._depResolutions = pkg._depResolutions;
   if (pkg._flatVersion) dm.pkg._flatVersion = pkg._flatVersion;
+  if (pkg.fyn) dm.pkg.fallbackToDefault = pkg.fyn.fallbackToDefault;
 
   return dm.pkg;
 };
@@ -510,9 +511,15 @@ function flatResolveLookupPaths(request, parent, newReturn) {
       debug("flat false, original lookup");
       return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
     }
-    debug("no version, fail");
-    /* istanbul ignore next */
-    return newReturn ? null : [request, []]; // force not found error out
+
+    if (versions.default && pkg && pkg.fallbackToDefault === true) {
+      debug("fallback to default");
+      version = versions.default;
+    } else {
+      debug("no version, fail");
+      /* istanbul ignore next */
+      return newReturn ? null : [request, []]; // force not found error out
+    }
   }
 
   if (dirInfo.flat === undefined) {
