@@ -15,6 +15,7 @@ Module[ORIG_FIND_PATH] = Module._findPath;
 
 const DIR_MAP = new Map();
 const __FV_DIR = "__fv_";
+const __FYN_IGNORE__ = "__fyn_ignore__";
 
 const debug = () => undefined;
 // const debug = console.log;
@@ -121,7 +122,7 @@ internals.searchTopDir = originDir => {
     }
 
     const nmDir = path.join(dir, NODE_MODULES);
-    if (fs.existsSync(nmDir)) {
+    if (fs.existsSync(nmDir) && !fs.existsSync(path.join(nmDir, __FYN_IGNORE__))) {
       // yay, found node_modules
       // but is it a linked module?
       const linkedInfo = internals.getLinkedInfo(nmDir);

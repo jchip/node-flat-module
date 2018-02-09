@@ -248,6 +248,17 @@ describe("flat-module", function() {
     );
   });
 
+  it("should ignore node_modules with __fyn_ignore__", () => {
+    let error;
+    try {
+      require(Path.join(__dirname, "../fixtures/fyn-ignore"));
+    } catch (e) {
+      error = e;
+    }
+    expect(error).to.exist;
+    expect(error.message).to.equal("Cannot find module 'foo-ignore'");
+  });
+
   describe("when in node repl", function() {
     it("should return proper paths when parent.filename is null (repl)", () => {
       const parent = {
