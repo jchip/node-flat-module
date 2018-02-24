@@ -9,29 +9,30 @@ const expect = chai.expect;
 const mkdirp = require("mkdirp");
 const rimraf = require("rimraf");
 
-const versionsDir = "__fv_";
+const loadJson = fname => {
+  return JSON.parse(Fs.readFileSync(fname).toString());
+};
+
+const __FV_DIR = "__fv_";
 
 function linkModule(name, app, options) {
   options = options || {};
   const fixtures = Path.join(__dirname, "..", "fixtures");
   const modLoc = Path.join(fixtures, name);
-  const modLinkVersion =
-    "symlink_" +
-    Crypto.createHash("md5")
-      .update(modLoc)
-      .digest("base64")
-      .replace(/[+/]/g, m => (m === "+" ? "-" : "_"))
-      .substr(0, 22);
+  const modVer = loadJson(Path.join(modLoc, "package.json")).version;
+  const modLinkVersion = `${modVer}-local`;
   const appDir = Path.join(fixtures, app);
-  const appNmMod = Path.join(appDir, "node_modules", name);
-  const modLinkVersionDir = Path.join(appNmMod, versionsDir, modLinkVersion);
+  const nmDir = Path.join(appDir, "node_modules");
+  const modLinkVersionDir = Path.join(nmDir, __FV_DIR, modLinkVersion);
   mkdirp.sync(modLinkVersionDir);
   const modLinkDir = Path.join(modLinkVersionDir, name);
+
   if (!Fs.existsSync(modLinkDir)) {
     Fs.symlinkSync(modLoc, modLinkDir);
   }
+
   if (!options.noTarget) {
-    const linkedFile = Path.join(modLinkVersionDir, "__fyn_link__.json");
+    const linkedFile = Path.join(modLinkVersionDir, `__fyn_link_${name}__.json`);
     Fs.writeFileSync(
       linkedFile,
       JSON.stringify(
@@ -45,6 +46,7 @@ function linkModule(name, app, options) {
       ) + "\n"
     );
   }
+
   if (!options.noFrom) {
     const modLinkFrom = Path.join(modLoc, "node_modules", "__fyn_link__.json");
     Fs.writeFileSync(
@@ -79,7 +81,7 @@ describe("flat-module", function() {
     flatModule = require("../../flat-module");
     process.chdir("test/fixtures/app");
     appCwd = process.cwd();
-    rimraf.sync("node_modules/**/v_symlink*");
+    rimraf.sync("node_modules/.fv/**/link_local");
     rimraf.sync("../zoo/node_modules/__fyn_link__.json");
     rimraf.sync("/tmp/flat-test");
     linkModule("zoo", "app");
@@ -105,7 +107,7 @@ describe("flat-module", function() {
   });
 
   it("should load module with CWD within an installed module", () => {
-    process.chdir(`node_modules/car/${versionsDir}/1.0.0/car/lib`);
+    process.chdir(`node_modules/${__FV_DIR}/1.0.0/car/lib`);
     require(Path.resolve("index"));
   });
 
@@ -244,7 +246,7 @@ describe("flat-module", function() {
     const requireAtApp = requireAt(Path.resolve("../fixtures/another-app"));
     const foo = requireAtApp.resolve("foo");
     expect(foo).to.include(
-      `test/fixtures/another-app/node_modules/foo/${versionsDir}/9.10.5/foo/index.js`
+      `test/fixtures/another-app/node_modules/${__FV_DIR}/9.10.5/foo/index.js`
     );
   });
 
@@ -271,7 +273,7 @@ describe("flat-module", function() {
       };
       expect(flatModule.flatResolveLookupPaths("foo", parent)).to.deep.equal([
         "foo",
-        [Path.resolve(`node_modules/foo/${versionsDir}/1.1.0`)]
+        [Path.resolve(`node_modules/${__FV_DIR}/1.1.0`)]
       ]);
     });
 
@@ -287,7 +289,7 @@ describe("flat-module", function() {
       process.chdir("lib/lib2");
       expect(flatModule.flatResolveLookupPaths("foo", parent)).to.deep.equal([
         "foo",
-        [Path.resolve(`../../node_modules/foo/${versionsDir}/1.1.0`)]
+        [Path.resolve(`../../node_modules/${__FV_DIR}/1.1.0`)]
       ]);
     });
   });

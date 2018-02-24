@@ -207,7 +207,7 @@ internals.findNearestPackage = (dir, stopDir, singleStops) => {
 };
 
 //
-// Find module name by matching dir name to request under <dir>/node_modules
+// Find module name from a require request
 // For handling calls like: require("foo/lib/bar") and require("@ns/foo")
 //
 internals.findModuleName = (dir, request) => {
@@ -217,20 +217,11 @@ internals.findModuleName = (dir, request) => {
     return request;
   }
 
-  const hasPkgOrFV = d => internals.readPackage(d) || internals.getModuleVersions(d).fv;
-
-  dir = path.join(dir, NODE_MODULES);
-
-  let i;
-  for (i = 0; i < splits.length; i++) {
-    dir = path.join(dir, splits[i]);
-    if (hasPkgOrFV(dir)) {
-      request = splits.slice(0, i + 1).join("/");
-      break;
-    }
+  if (request.startsWith("@")) {
+    return path.join(splits[0], splits[1]);
   }
 
-  return request;
+  return splits[0];
 };
 
 internals.isRelativePathRequest = request => {
@@ -337,47 +328,73 @@ internals.semVerCompare = (a, b) => {
   return a > b ? 1 : -1;
 };
 
-internals.getModuleVersions = modDir => {
-  debug("getModuleVersions", modDir);
+internals.loadFV = dirInfo => {
+  if (dirInfo.hasOwnProperty("fvVersions")) return;
+  const nmDir = path.join(dirInfo.top, NODE_MODULES);
+  const fvDir = path.join(nmDir, __FV_DIR);
+
+  dirInfo.fvVersions = {};
+  if (!fs.existsSync(fvDir)) return;
+
+  const versions = fs.readdirSync(fvDir);
+  for (const v of versions) {
+    const verDir = path.join(fvDir, v);
+    const mods = fs.readdirSync(verDir);
+    for (let m of mods) {
+      if (m.startsWith("@")) {
+        const scopeDir = path.join(verDir, m);
+        const scope2 = fs.readdirSync(scopeDir);
+        m = path.join(m, scope2[0]);
+      }
+      if (!dirInfo.fvVersions[m]) {
+        dirInfo.fvVersions[m] = [];
+      }
+      dirInfo.fvVersions[m].push(v);
+    }
+  }
+};
+
+internals.loadModVersions = (dirInfo, modName) => {
+  const modDir = path.join(dirInfo.top, NODE_MODULES, modName);
 
   const dm = internals.getDirMap(modDir);
 
-  if (dm.hasOwnProperty("versions")) {
-    return dm.versions || { all: [] };
+  if (dm.hasOwnProperty("versions")) return dm;
+
+  const versions = {};
+
+  const all = dirInfo.fvVersions[modName] || [];
+
+  if (all.length > 0) versions.fv = true;
+
+  //
+  // does there exist a default version
+  //
+  internals.readPackage(modDir);
+
+  if (dm.pkg) {
+    const dv = dm.pkg._flatVersion || dm.pkg.version;
+    all.push(dv);
+    versions.default = dv;
   }
 
-  if (fs.existsSync(modDir)) {
-    const versions = {};
-    if (!dm.hasOwnProperty("pkg")) {
-      internals.readPackage(modDir);
-    }
-
-    const vDir = path.join(modDir, __FV_DIR);
-    const all = fs.existsSync(vDir) ? fs.readdirSync(vDir) : [];
-
-    if (all.length > 0) versions.fv = true;
-
-    //
-    // does there exist a default version
-    //
-    if (dm.pkg && dm.pkg._flatVersion) {
-      if (all.indexOf(dm.pkg._flatVersion) < 0) {
-        all.push(dm.pkg._flatVersion);
-      }
-
-      versions.default = dm.pkg._flatVersion;
-    }
-
-    if (all.length > 0) {
-      versions.all = all.sort(internals.semVerCompare);
-      dm.versions = versions;
-    }
+  if (all.length > 0) {
+    versions.all = all.sort(internals.semVerCompare);
+    dm.versions = versions;
   }
 
   if (!dm.hasOwnProperty("versions")) {
     dm.versions = undefined;
   }
 
+  debug("loadModVersions modDir", modDir, dm.pkg, dm.versions);
+
+  return dm;
+};
+
+internals.getModuleVersions = (dirInfo, modName) => {
+  internals.loadFV(dirInfo);
+  const dm = internals.loadModVersions(dirInfo, modName);
   return dm.versions || { all: [] };
 };
 
@@ -496,8 +513,7 @@ function flatResolveLookupPaths(request, parent, newReturn) {
     return r.resolved;
   };
 
-  const moduleDir = path.join(dirInfo.top, NODE_MODULES, moduleName);
-  const versions = internals.getModuleVersions(moduleDir);
+  const versions = internals.getModuleVersions(dirInfo, moduleName);
   const version = reqParts.semVer
     ? matchLatestSemVer(reqParts.semVer, versions)
     : getResolvedVersion(versions);
@@ -530,7 +546,7 @@ function flatResolveLookupPaths(request, parent, newReturn) {
   const versionFp =
     version === versions.default
       ? path.join(dirInfo.top, NODE_MODULES)
-      : path.join(moduleDir, __FV_DIR, version);
+      : path.join(dirInfo.top, NODE_MODULES, __FV_DIR, version);
 
   debug("versionFp", versionFp);
 
