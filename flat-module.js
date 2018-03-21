@@ -22,13 +22,17 @@ const debug = () => undefined;
 const NODE_MODULES = "node_modules";
 const PACKAGE_JSON = "package.json";
 
-let internals = {};
+let internals = { FYN_LINK_CWD: process.cwd() };
+
+internals.fynLinkCwd = () => {
+  return process.env.FYN_LINK_CWD || internals.FYN_LINK_CWD;
+};
 
 internals.getLinkedInfo = dir => {
   const linkedF = path.join(dir, "__fyn_link__.json");
   if (fs.existsSync(linkedF)) {
     const linked = internals.readJSON(linkedF);
-    return linked[process.cwd()];
+    return linked[internals.fynLinkCwd()];
   }
   return false;
 };
@@ -129,7 +133,7 @@ internals.searchTopDir = originDir => {
 
       if (linkedInfo) {
         // switch topDir to CWD for linked mod
-        dm.top = process.cwd();
+        dm.top = internals.fynLinkCwd();
         dm.linkedInfo = linkedInfo;
       } else {
         dm.top = dir;
@@ -454,10 +458,14 @@ function flatResolveLookupPaths(request, parent, newReturn) {
   const originDir = parentDir || process.cwd();
   const dirInfo = internals.searchTopDir(originDir);
 
-  debug("dirInfo", dirInfo);
+  debug("dirInfo.top", dirInfo.top);
 
   if (dirInfo.flat === false) {
     return this[ORIG_RESOLVE_LOOKUP_PATHS](request, parent, newReturn);
+  }
+
+  if (dirInfo.top !== internals.FYN_LINK_CWD) {
+    internals.FYN_LINK_CWD = dirInfo.top;
   }
 
   //
